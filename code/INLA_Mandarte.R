@@ -196,10 +196,31 @@ QGparams(
 # * It's correct that we have a binomial case (binary trait) with N trials, each trial corresponding to an individual,
 #       so that n.obs = 2722 (nrow(d.ped)) ?
 # * Does it matter if I choose to look at the mean or mode of the re-sampled variances?
-
+# * In Gaussian INLA, it makes more sense to me to just not specify any link functions, considering that
+#     in gaussian regression, the response is eta so g(\eta)=\eta \iff g = identity (right?)
+# Back-transformed INLA (binomial-probit) yields h^2 0.1781276 on data scale.
 
 #### End QGglmm
 
+#### Start gaussian INLA
+r.inla.gaussian.surv.ind.to.ad = inla(formula=formula.surv.ind.to.ad, family="gaussian",
+                             data=qg.data.gg.inds,
+                             control.compute=list(dic=T), # config = TRUE
+                             #control.family = list(link = "probit")
+)
+
+sample.gaussian.posterior <- inla.hyperpar.sample(n=nsamples,r.inla.gaussian.surv.ind.to.ad)
+h2.gaussian.inla <- 1/sample.gaussian.posterior[,"Precision for id"] / (
+  (1/sample.gaussian.posterior[,"Precision for id"]) +
+    (1/sample.gaussian.posterior[,"Precision for natalyr.id"]) +
+    (1/sample.gaussian.posterior[,"Precision for nestrec"]) #+1
+  )
+mean(h2.gaussian.inla) # Gives us 0.2025554
+
+#### End gaussian INLA
+
+
+################### Not in use at the moment
 
 #' ## Heterogeneous variances
 
