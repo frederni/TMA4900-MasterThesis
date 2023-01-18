@@ -1,0 +1,91 @@
+---
+title: "EDA song sparrow data"
+output: pdf_document
+date: "2023-01-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data frame overview
+
+### Pedigree
+
+The first object is `d.ped` which contains the pedigree information.
+
+```{r pedigree summary}
+summary(d.ped)
+```
+
+It has the columns *ninecode*, *gendam*, and *gensire*. The first column cannot be `NA` and is the unique identifier for an individual, whereas `gendam`and `gensire` are references (foreign keys) to the known maternal and paternal link, respectively. Both of these columns have 59 NAs. In fact, these NAs overlap completely since they are the founder population with no defined paternal or maternal link:
+
+```{r pedigree founder population}
+d.ped[is.na(d.ped$gendam), "gensire"]
+```
+
+We see that *gensire* is NA for all instances where *gendam* is also NA.
+
+### d.Q
+
+This table has the columns *g1*, *foc0* and *ninecode* (ID).
+
+```{r}
+head(d.Q)
+```
+
+From the first look, it might seem like these are binary/categorical variables, but plotting the values across indices show that the order of the rows are structured so that they start at 1 and 0 respectively.
+
+```{r}
+par(mfrow=c(1,2))
+plot(d.Q$g1,main="g1")
+plot(d.Q$foc0,main="foc0")
+```
+
+We can also look at the correlation between these two values
+
+```{r}
+cor(d.Q$foc0, d.Q$g1)
+```
+
+Very strong negative correlation here. We can also look at the individuals whose ID were in the *founder population*:
+
+```{r}
+install.packages("dplyr")
+library(dplyr)
+founder_population.id <- d.ped[is.na(d.ped$gendam), "ninecode"]
+table(d.Q[which(d.Q$ninecode %in% founder_population.id), c("foc0", "g1")])
+```
+
+The values seem to be relatively balanced between $0$ and $1$ in the founder population. This supports the idea that they measure the immigration contribution to the genetic composition of the individuals. All immigrant individuals are completely immigrant, have no pedigree and are thus part of the founder population. The latter are those who are the "inital" natives on the island, meaning that their values must be exactly zero.
+
+### ped.prune
+This is a pruned pedigree, only considering the 1993-2018 observations but also combining the knowledge of the 1973-1993 observations into them (I think).
+
+### qg.data.gg.ind
+
+This object has the following shape:
+```{r}
+head(qg.data.gg.inds)
+``` 
+
+The response variable we will use is `surv.ind.to.ad`. Some immediate observations:
+
+```{r}
+paste("Earliest year:", min(qg.data.gg.inds$natalyr))
+paste(c("Number not survived:", "Number survived:"), table(qg.data.gg.inds$surv.ind.to.ad))
+paste("natal year correlation:", cor(qg.data.gg.inds$natalyr, qg.data.gg.inds$natalyr.no))
+paste("correlation between sex and sex.x1:", cor(qg.data.gg.inds$sex.use, qg.data.gg.inds$sex.use.x1))
+```
+
+An overview over the columns:
+* *ninecode*: Individual ID
+* *natalyr*: Year individual was born, e.g. 2015.
+* *sex.use*: **Not in use**
+* *nestrec*: ID for nest number
+* *brood.date*: Day of the year when the first offspring in individuals nest hatched (I think zero is April 1st, it's in Rekkebo thesis)
+* *sex.use.x1*: Sex of individual, 1 or 2
+* *f.coef*: Inbreeding coefficient
+* *foc0*: "How foreign" individual is, related to f.coef
+* *g1*: Inverse of *foc0* essentially.
+* *natalyr.no*: The same as natal year, starting with 1974 as 0 (2015=41).
