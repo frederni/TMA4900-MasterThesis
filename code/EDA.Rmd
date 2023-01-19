@@ -6,6 +6,10 @@ date: "2023-01-17"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+qg.data.gg.inds <- read.table("../data/qg.data.gg.inds.steffi.txt", header = T)
+d.ped <- ped.prune.inds <- read.table("../data/ped.prune.inds.steffi.txt", header = T)
+d.Q <- read.table("../data/Q.data.steffi.txt", header = T)
+qg.data.gg.inds$sex <- qg.data.gg.inds$sex.use.x1 - 1
 ```
 
 ## Data frame overview
@@ -37,9 +41,9 @@ head(d.Q)
 From the first look, it might seem like these are binary/categorical variables, but plotting the values across indices show that the order of the rows are structured so that they start at 1 and 0 respectively.
 
 ```{r}
-par(mfrow=c(1,2))
-plot(d.Q$g1,main="g1")
-plot(d.Q$foc0,main="foc0")
+par(mfrow = c(1, 2))
+plot(d.Q$g1, main = "g1")
+plot(d.Q$foc0, main = "foc0")
 ```
 
 We can also look at the correlation between these two values
@@ -51,8 +55,6 @@ cor(d.Q$foc0, d.Q$g1)
 Very strong negative correlation here. We can also look at the individuals whose ID were in the *founder population*:
 
 ```{r}
-install.packages("dplyr")
-library(dplyr)
 founder_population.id <- d.ped[is.na(d.ped$gendam), "ninecode"]
 table(d.Q[which(d.Q$ninecode %in% founder_population.id), c("foc0", "g1")])
 ```
@@ -79,6 +81,7 @@ paste("correlation between sex and sex.x1:", cor(qg.data.gg.inds$sex.use, qg.dat
 ```
 
 An overview over the columns:
+
 * *ninecode*: Individual ID
 * *natalyr*: Year individual was born, e.g. 2015.
 * *sex.use*: **Not in use**
@@ -89,3 +92,82 @@ An overview over the columns:
 * *foc0*: "How foreign" individual is, related to f.coef
 * *g1*: Inverse of *foc0* essentially.
 * *natalyr.no*: The same as natal year, starting with 1974 as 0 (2015=41).
+
+
+## Some plotting
+
+```{r}
+library(ggplot2)
+
+ggplot(qg.data.gg.inds, aes(x = factor(surv.ind.to.ad), fill = factor(sex))) +
+  ggtitle("Distribution of juvenile survival to adulthood") +
+  geom_bar(alpha = 0.7) +
+  xlab("Survival") +
+  scale_fill_manual(
+    name = "Sex",
+    labels = c("Male", "Female"),
+    values = c("#619CFF", "#F8766D")
+  )
+```
+
+Seems like the sex in relation to survival is relatively balanced here. Next, we 
+
+```{r}
+ggplot(qg.data.gg.inds, aes(x = f.coef, fill = factor(surv.ind.to.ad))) +
+  ggtitle("Distribution of inbreeding coefficient") +
+  geom_density(alpha = 0.5) +
+  xlab("Inbreeding coefficient") +
+  ylab("Density") +
+  scale_fill_manual(
+    name = "Survived to adulthood",
+    label = c("No", "Yes"),
+    values = c("#D55E00", "#009E73")
+  )
+```
+
+Here we see that survival is a bit more skewed towards lower inbreeding coefficients. We can also look at how the proportion of individuals have survived over the years:
+
+```{r}
+ggplot(aggregate(surv.ind.to.ad ~ natalyr, qg.data.gg.inds, function(x) {
+  sum(x) / length(x)
+}), aes(x = natalyr, y = surv.ind.to.ad)) +
+  geom_line() +
+  geom_point() +
+  geom_smooth() +
+  ggtitle("Portion of juvenile survival by year") +
+  xlab("Year") +
+  ylab("Portion survived") +
+  scale_x_continuous(breaks = seq(1993, 2018, by = 4))
+```
+
+There seem to be very little trending along the years, but possibly a small negative trend. Let's also see if there is some correspondence between genetic group coefficient (`g1`) and juvenile survival.
+
+
+```{r}
+ggplot(qg.data.gg.inds, aes(x = g1, fill = factor(surv.ind.to.ad))) +
+  ggtitle("Distribution of genetic group coefficient") +
+  geom_density(alpha = 0.5) +
+  xlab("Genetic group coefficient") +
+  ylab("Density") +
+  scale_fill_manual(
+    name = "Survived to adulthood",
+    label = c("No", "Yes"),
+    values = c("#D55E00", "#009E73")
+  )
+```
+
+This shows a similar result to the inbreeding coefficient, namely a skew towards the right (lower values of coefficient) in the group that survived. We might also look into survival based on brood date:
+
+```{r}
+ggplot(aggregate(surv.ind.to.ad ~ brood.date, qg.data.gg.inds, function(x) {
+  sum(x) / length(x)
+}), aes(x = brood.date, y = surv.ind.to.ad)) +
+  geom_line() +
+  geom_point() +
+  geom_smooth() +
+  ggtitle("Portion of juvenile survival by brood date") +
+  xlab("Brood date") +
+  ylab("Portion survived")
+```
+
+This last plot seem to indicate that survival is relatively stable and somewhat decreasing for those hatched relatively late. For the largest values of brood date, we get an increasing trend but also much uncertainty since not that many were hatched this late. 
