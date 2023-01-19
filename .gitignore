@@ -1,6 +1,6 @@
 # # Specific for this project
 master.Rproj
-.lntr
+.lintr
 .gitignore.bak
 
 # History files
