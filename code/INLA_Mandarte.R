@@ -148,7 +148,7 @@ formula.surv.ind.to.ad = surv.ind.to.ad ~ f.coef.sc + g1.sc + natalyr.no.sc + br
 r.inla.surv.ind.to.ad = inla(formula=formula.surv.ind.to.ad, family="binomial",
                              data=qg.data.gg.inds,
                              control.compute=list(dic=T), # config = TRUE
-                             control.family = list(link = "probit")
+                             control.family = list(link = "logit")
 )
 
 #' Check if there is a problem (ok of =0) and dic
@@ -174,7 +174,9 @@ plot(inla.tmarginal(function(x) 1/x,r.inla.surv.ind.to.ad$marginals.hyperpar$`Pr
 nsamples <- 100000
 sample.posterior <- inla.hyperpar.sample(n=nsamples,r.inla.surv.ind.to.ad)
 
-h2.inla <- 1/sample.posterior[,"Precision for id"] / ((1/sample.posterior[,"Precision for id"]) + (1/sample.posterior[,"Precision for natalyr.id"]) + (1/sample.posterior[,"Precision for nestrec"]) +1)
+h2.inla <- 1/sample.posterior[,"Precision for id"] / ((
+  1/sample.posterior[,"Precision for id"]) + (1/sample.posterior[,"Precision for natalyr.id"]) +
+    (1/sample.posterior[,"Precision for nestrec"]) + 0)
 
 par(mfrow=c(1,1))
 truehist(h2.inla)
@@ -189,7 +191,7 @@ QGparams(
   var.p = mean((1/sample.posterior[,"Precision for id"]) +
     (1/sample.posterior[,"Precision for natalyr.id"]) +
     (1/sample.posterior[,"Precision for nestrec"])),
-  model = "binomN.probit",
+  model = "binom1.logit",
   n.obs = nrow(d.ped)
 )
 # ___ QUESTIONS ___
@@ -215,8 +217,9 @@ h2.gaussian.inla <- 1/sample.gaussian.posterior[,"Precision for id"] / (
     (1/sample.gaussian.posterior[,"Precision for natalyr.id"]) +
     (1/sample.gaussian.posterior[,"Precision for nestrec"]) #+1
   )
-mean(h2.gaussian.inla) # Gives us 0.2025554
-
+mean(h2.gaussian.inla) # Gives us 0.2025554 no?
+truehist(h2.gaussian.inla)
+quantile(h2.gaussian.inla, probs=c(0.05, 0.95))
 #### End gaussian INLA
 
 
