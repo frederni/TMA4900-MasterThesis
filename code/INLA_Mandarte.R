@@ -20,7 +20,7 @@ library(MASS)
 library(nadiv)
 library(bdsmatrix)
 library(INLA)
-
+library(QGglmm)
 library(SMisc)
 
 #' # Preparing the data
@@ -148,7 +148,7 @@ formula.surv.ind.to.ad = surv.ind.to.ad ~ f.coef.sc + g1.sc + natalyr.no.sc + br
 r.inla.surv.ind.to.ad = inla(formula=formula.surv.ind.to.ad, family="binomial",
                              data=qg.data.gg.inds,
                              control.compute=list(dic=T), # config = TRUE
-                             control.family = list(link = "logit")
+                             control.family = list(link = "probit")
 )
 
 #' Check if there is a problem (ok of =0) and dic
@@ -181,17 +181,52 @@ h2.inla <- 1/sample.posterior[,"Precision for id"] / ((
 par(mfrow=c(1,1))
 truehist(h2.inla)
 
+get_mode <- function(vec){
+  d = density(vec)
+  d$x[which.max(d$y)]
+}
+
 
 #### Start QGglmm?
-install.packages("QGglmm")
-library(QGglmm)
+#install.packages("QGglmm")
+
+h2.from.qgparams <- function(inla.fit, modelname, n, n.obs=nrow(d.ped)){
+  #' Computes a posterior of data-scale heritability (h2) using QGParams
+  #'  
+  #' Params:
+  #' inlafit    the fitted INLA object
+  #' modelname  a string specifying model
+  #'    ("Gaussian", "binomN.probit", "binomN.logit")
+  #' n.obs      keyword argument if binomial model is has N != 1 trials
+  #'    NB: Should explicitly be set to NULL if not relevant (Gaussian model)
+  samples.posterior <- inla.hyperpar.sample(n=n,inla.fit)
+  mu = inla.fit$summary.fixed$mean[1]
+  va.samples = 1/samples.posterior[,"Precision for id"]
+  vp.samples = va.samples +
+    1/samples.posterior[,"Precision for natalyr.id"] +
+    1/samples.posterior[,"Precision for nestrec"]
+  
+  kwargs = list(n.obs=n.obs, verbose=F)
+  h2.getter = function(...){get("h2.obs", QGparams(...))}
+  out = mapply(h2.getter, mu, va.samples, vp.samples, modelname, MoreArgs=kwargs)
+  return(out)
+}
+
+binom.probit.h2.datascale.qgpar = h2.from.qgparams(r.inla.surv.ind.to.ad, "binomN.probit", 10000)
+
+
+qgparam.mu = r.inla.surv.ind.to.ad$summary.fixed$mean[1]
+h2.qgparam = c()
+for(i in 1:nsamples){
+  QGparams(mu=qgparam.mu, var.a=va.samples, var.p=vp.samples, model=rep(modelname, n))
+}
 QGparams(
   mu= r.inla.surv.ind.to.ad$summary.fixed$mean[1],
   var.a = mean(1/sample.posterior[,"Precision for id"]),
   var.p = mean((1/sample.posterior[,"Precision for id"]) +
     (1/sample.posterior[,"Precision for natalyr.id"]) +
     (1/sample.posterior[,"Precision for nestrec"])),
-  model = "binom1.logit",
+  model = "binomN.probit",
   n.obs = nrow(d.ped)
 )
 # ___ QUESTIONS ___
