@@ -1,0 +1,319 @@
+---
+title: "Main notebook"
+output: pdf_document
+date: '2023-02-01'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Acknowledgements
+The data and a large portion of data preprocessing is provided by Jane Reid. The re-implementation into INLA is also largely based on the work from Stefanie Muff.
+
+# Data loading
+
+```{r data loading}
+library(MCMCglmm)
+library(MASS)
+library(nadiv)
+library(bdsmatrix)
+library(INLA)
+library(QGglmm)
+library(SMisc)
+library(ggplot2)
+
+qg.data.gg.inds <- read.table("../data/qg.data.gg.inds.steffi.txt", header=T)
+d.ped <- ped.prune.inds <- read.table("../data/ped.prune.inds.steffi.txt", header=T)
+d.Q <-  read.table("../data/Q.data.steffi.txt", header=T)
+
+qg.data.gg.inds$natalyr.id <- qg.data.gg.inds$natalyr.no
+
+```
+
+Scaling continuous variances can be more stable: (I think?)
+```{r}
+qg.data.gg.inds$f.coef.sc <- scale(qg.data.gg.inds$f.coef,scale=FALSE)
+qg.data.gg.inds$g1.sc <- scale(qg.data.gg.inds$g1,scale=FALSE)
+qg.data.gg.inds$natalyr.no.sc <- scale(qg.data.gg.inds$natalyr.no,scale=FALSE)
+qg.data.gg.inds$brood.date.sc <- scale(qg.data.gg.inds$brood.date,scale=FALSE)
+```
+
+The sex covariate is either `1` or `2`, so we binarize this covariate:
+```{r}
+qg.data.gg.inds$sex <- qg.data.gg.inds$sex.use.x1 - 1 
+```
+
+## Deriving *A*
+
+In order to derive the A matrix, we need to work a bit
+```{r}
+d.ped <- nadiv::prepPed(d.ped)
+```
+
+In particular, for INLA we need ids that run from 1 to the number of individuals
+```{r}
+d.ped$id <- 1:(nrow(d.ped))
+```
+
+Need a map file to keep track of the ids
+```{r}
+d.map <- d.ped[,c("ninecode","id")]
+d.map$g1 <- d.Q[match(d.map$ninecode,d.Q$ninecode),"g1"]
+d.map$foc0 <- d.Q[match(d.map$ninecode,d.Q$ninecode),"foc0"]
+```
+
+Give mother and father the id
+```{r}
+d.ped$mother.id <- d.map[match(d.ped$gendam, d.map$ninecode),"id"]
+d.ped$father.id <- d.map[match(d.ped$gensire, d.map$ninecode),"id"]
+```
+
+Make the inverse A matrix using the `nadiv` package:
+```{r}
+Cmatrix <- nadiv::makeAinv(d.ped[,c("id","mother.id","father.id")])$Ainv
+```
+
+Store the id twice: Once for the breeding value, and once for the independent residuals u with variance 1 (the latter are not going to be included in the end, but we checked what happened when they were there)
+```{r}
+qg.data.gg.inds$id <- d.map[match(qg.data.gg.inds$ninecode, d.map$ninecode), "id"]
+qg.data.gg.inds$u <- 1:nrow(qg.data.gg.inds)
+```
+
+# INLA
+
+The general INLA formula is provided below, where `f()` encode the random effect:
+```{r}
+formula.inla.scaled = surv.ind.to.ad ~ f.coef.sc + g1.sc + natalyr.no.sc + brood.date.sc + sex +
+  f(nestrec, model="iid",hyper=list(
+    prec=list(initial=log(1/0.05), prior="pc.prec",param=c(1,0.05)) # PC priors
+  )) +
+  f(natalyr.id, model="iid",hyper=list(
+    prec=list(initial=log(1/0.25), prior="pc.prec",param=c(1,0.05)) # PC priors
+  )) +
+  f(id,model="generic0", # Here we need to specify the covariance matrix 
+    Cmatrix=Cmatrix,     #    via the inverse (Cmatrix)
+    # constr = TRUE,
+    hyper=list(
+      prec=list(initial=log(1/10), prior="pc.prec",param=c(1,0.05)) # PC priors
+    ))  #+ # this last part is only needed if the u~N(0,1) residuals are included
+# f(u, model="iid",
+#   constr=TRUE,
+#   hyper=list(
+#     prec=list(initial=log(1), fixed=TRUE) # Fixed variance to 1
+#   )) # This last component adds the independent residuals with variance 1;
+```
+
+Now we call INLA models, this is the slowest part:
+
+```{r}
+
+fit.inla.probit = inla(formula=formula.inla.scaled, family="binomial",
+                             data=qg.data.gg.inds,
+                             control.compute=list(dic=T),
+                             control.family = list(link = "probit")
+)
+
+fit.inla.logit = inla(formula=formula.inla.scaled, family="binomial",
+                             data=qg.data.gg.inds,
+                             control.compute=list(dic=T), 
+                             control.family = list(link = "logit")
+)
+
+fit.inla.gaussian = inla(formula=formula.inla.scaled, family="gaussian",
+                             data=qg.data.gg.inds,
+                             control.compute=list(dic=T) 
+)
+
+```
+
+We define a general method for looking at the results of an INLA model.
+
+```{r}
+analyze.inla.fit <- function(inla.fit){
+  #' Check if there is a problem (ok of =0) and dic
+  inla.fit$mode$mode.status
+  inla.fit$dic$dic
+  
+  summary(inla.fit)
+  
+  inla.fit$summary.hyperpar
+  inla.fit$summary.fixed
+  
+  inla_mmarginal(inla.fit)
+  inla_emarginal(inla.fit)
+  
+  #' Plotting the posterior marginals for the variances; This is a bit cumbersome,
+  #' because INLA works with precisions, so we need a transformation. 
+  #' The code below does it for us:
+  par(mfrow=c(1,3))
+  
+  plot(inla.tmarginal(
+    function(x) 1/x,inla.fit$marginals.hyperpar$`Precision for nestrec`),
+    type="l",main = "next")
+  
+  plot(inla.tmarginal(
+    function(x) 1/x,inla.fit$marginals.hyperpar$`Precision for natalyr.id`),
+    type="l",main="natalyr")
+  
+  plot(inla.tmarginal(
+    function(x) 1/x,inla.fit$marginals.hyperpar$`Precision for id`),
+    type="l",main="animal")
+}
+
+```
+
+Below is a method used to obtain posterior distribution of the back-transformed heritability:
+```{r}
+get.h2 <- function(inla.fit, n, use.scale=F, model=NA){
+  samples <- inla.hyperpar.sample(n=n,inla.fit)
+
+  denominator = 1/samples[,"Precision for id"] + 1/samples[,"Precision for natalyr.id"] +
+    1/samples[,"Precision for nestrec"]
+  
+  if(use.scale){
+    # We need model specification to use scale
+    stopifnot(model %in% c("binomN.probit", "binomN.logit"))
+    scale.param = ifelse(model == "binomN.probit", 1, pi^2/3)
+    denominator = denominator + scale.param
+  }
+  
+  h2.inla <- (1/samples[,"Precision for id"]) / denominator
+  return(h2.inla)
+}
+
+get.h2.from.qgparams <- function(inla.fit, modelname, n, n.obs=nrow(d.ped)){
+  #' Computes a posterior of data-scale heritability (h2) using QGParams
+  #'  
+  #' Params:
+  #' inlafit    the fitted INLA object
+  #' modelname  a string specifying model
+  #'    ("Gaussian", "binomN.probit", "binomN.logit")
+  #' n.obs      keyword argument if binomial model is has N != 1 trials
+  #'    NB: Should explicitly be set to NULL if not relevant (Gaussian model)
+  stopifnot(modelname %in% c("Gaussian", "binomN.probit", "binomN.logit"))
+  samples.posterior <- inla.hyperpar.sample(n=n,inla.fit)
+  mu = inla.fit$summary.fixed$mean[1]
+  va.samples = 1/samples.posterior[,"Precision for id"]
+  vp.samples = va.samples +
+    1/samples.posterior[,"Precision for natalyr.id"] +
+    1/samples.posterior[,"Precision for nestrec"]
+  
+  kwargs = list(n.obs=n.obs, verbose=F)
+  h2.getter = function(...){get("h2.obs", suppressWarnings(QGparams(...)))}
+  out = mapply(h2.getter, mu, va.samples, vp.samples, modelname, MoreArgs=kwargs)
+  return(out)
+}
+```
+
+We extend the contents of the INLA fit to include heritabilities on the different scales
+
+```{r}
+# Running cell
+n.samples = 10000
+fit.inla.gaussian$h2.latent = get.h2(fit.inla.gaussian, n.samples)
+fit.inla.logit$h2.latent = get.h2(fit.inla.logit, n.samples)
+fit.inla.probit$h2.latent = get.h2(fit.inla.probit, n.samples)
+
+fit.inla.logit$h2.scaled = get.h2(fit.inla.logit, n.samples, use.scale=T,
+                                  model="binomN.logit")
+fit.inla.probit$h2.scaled = get.h2(fit.inla.probit, n.samples,use.scale=T,
+                                   model="binomN.probit")
+
+fit.inla.logit$h2.qgglmm  = get.h2.from.qgparams(fit.inla.logit, "binomN.logit", n.samples)
+fit.inla.probit$h2.qgglmm = get.h2.from.qgparams(fit.inla.probit, "binomN.probit", n.samples)
+```
+
+Plotting some histograms:
+
+Trying one with all overlapping:
+```{r}
+df.latent.h2 = data.frame(samples=c(unname(fit.inla.logit$h2.latent), unname(fit.inla.probit$h2.latent)),
+                      Model=c(
+                        rep("Logit",length(fit.inla.logit$h2.latent)),
+                        rep("Probit",length(fit.inla.probit$h2.latent))
+                      )
+                        )
+
+ggplot(df.latent.h2, aes(x=samples, fill=Model)) +
+  geom_density(alpha=0.5) +
+  ggtitle("Posterior of latent scale heritability for binomial INLA models") +
+  xlab("(Latent-scale) Heritability") +
+  ylab("Density")
+```
+
+```{r}
+df.transformed.h2 = data.frame(
+  samples=c(
+    unname(fit.inla.logit$h2.qgglmm),
+    unname(fit.inla.probit$h2.qgglmm),
+    unname(fit.inla.gaussian$h2.latent)
+    ),
+  Model=c(
+    rep("Logit",length(fit.inla.logit$h2.qgglmm)),
+    rep("Probit", length(fit.inla.probit$h2.qgglmm)),
+    rep("Gaussian (no transformation)",length(fit.inla.gaussian$h2.latent))
+    )
+  )
+
+ggplot(df.transformed.h2, aes(x=samples, fill=Model)) +
+  geom_density(alpha=0.5) +
+  ggtitle("Posterior of transformed heritability") +
+  xlab("(Latent-scale) Heritability") +
+  ylab("Density")
+```
+
+# Simulation data
+
+```{r}
+
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+if (!require("GeneticsPed", quietly = TRUE))
+    BiocManager::install("GeneticsPed")
+
+# library("pedigree")
+library("GeneticsPed") 
+library("MCMCglmm")
+
+# set a value for the Ne/Nc ratio
+# here is 0.5 but it can be set to 0.15 or 0.05
+NeNc <- 0.5
+# set other parameters 
+# (idgen = id per generations, nGen = number of generations)
+idgen <- 100
+nGen <- 9
+
+# generate the pedigree using the function generatePedigree from GeneticsPed
+# nFather and nMother are the number of fathers and mothers per generation
+# they are generated according to the selected Ne/Nc ratio
+ped0 <- generatePedigree(nId = idgen, nGeneration = nGen, 
+                         nFather = idgen * NeNc, nMother = idgen * NeNc)  
+
+# N individuals
+Nid <- length(ped0$id)
+
+
+# set correct format for pedigree
+pedigree <- ped0[ , c(1,3,2)]
+names(pedigree) <- c("id", "dam", "sire")
+head(pedigree)
+# generate breeding values (always constant)
+# using the function rbv from MCMCglmm
+# fix the additive variance value, here is 0.3 but it can be any value
+Z <- diag(Nid)
+sigmaA <- 0.4
+# pedigree <- ped0[ ,1:3]
+u <- rbv(pedigree, sigmaA) # Breeding values for each individual 
+## We get: the condition has length > 1 and only the first element will be used #??? 
+
+# How do we generate the rest of the data tho? Like number survived and whatnot
+```
+
+Now we try to run it through the model pipeline:
+```{r}
+simulated.d.ped <- pedigree
+simulated.d.ped <- nadiv::prepPed(simulated.d.ped)
+simulated.Cmatrix <- nadiv::makeAinv(simulated.d.ped)$Ainv # TODO might need to index here?
+
+``` 
