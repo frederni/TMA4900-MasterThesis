@@ -1,6 +1,8 @@
 ---
 title: "EDA song sparrow data"
-output: pdf_document
+output:
+  pdf_document:
+    keep_tex: yes
 date: "2023-01-17"
 ---
 
@@ -12,9 +14,9 @@ d.Q <- read.table("../data/Q.data.steffi.txt", header = T)
 qg.data.gg.inds$sex <- qg.data.gg.inds$sex.use.x1 - 1
 ```
 
-## Data frame overview
+## Data frame overview {-}
 
-### Pedigree
+### Pedigree {-}
 
 The first object is `d.ped` which contains the pedigree information.
 
@@ -28,9 +30,9 @@ It has the columns *ninecode*, *gendam*, and *gensire*. The first column cannot 
 d.ped[is.na(d.ped$gendam), "gensire"]
 ```
 
-We see that *gensire* is NA for all instances where *gendam* is also NA.
+We see that *gensire* is NA for all instances where *gendam* is also NA. This is in fact the founder population with no defined parental linkage.
 
-### d.Q
+### d.Q {-}
 
 This table has the columns *g1*, *foc0* and *ninecode* (ID).
 
@@ -52,7 +54,7 @@ We can also look at the correlation between these two values
 cor(d.Q$foc0, d.Q$g1)
 ```
 
-Very strong negative correlation here. We can also look at the individuals whose ID were in the *founder population*:
+We have a very strong negative correlation here. We can also look at the individuals whose ID were in the *founder population*:
 
 ```{r}
 founder_population.id <- d.ped[is.na(d.ped$gendam), "ninecode"]
@@ -61,10 +63,10 @@ table(d.Q[which(d.Q$ninecode %in% founder_population.id), c("foc0", "g1")])
 
 The values seem to be relatively balanced between $0$ and $1$ in the founder population. This supports the idea that they measure the immigration contribution to the genetic composition of the individuals. All immigrant individuals are completely immigrant, have no pedigree and are thus part of the founder population. The latter are those who are the "inital" natives on the island, meaning that their values must be exactly zero.
 
-### ped.prune
-This is a pruned pedigree, only considering the 1993-2018 observations but also combining the knowledge of the 1973-1993 observations into them (I think).
+### ped.prune {-}
+This is a pruned pedigree, only considering the 1993-2018 observations but also combining the knowledge of the 1975-1992 observations into them.
 
-### qg.data.gg.ind
+### qg.data.gg.ind {-}
 
 This object has the following shape:
 ```{r}
@@ -94,7 +96,10 @@ An overview over the columns:
 * *natalyr.no*: The same as natal year, starting with 1974 as 0 (2015=41).
 
 
-## Some plotting
+## Vizualization of juvenile survival {-}
+We will have a look at how the response, juveniule survival, realtes to the other covariates in our data.
+
+First, we look at sex:
 
 ```{r}
 library(ggplot2)
@@ -110,7 +115,7 @@ ggplot(qg.data.gg.inds, aes(x = factor(surv.ind.to.ad), fill = factor(sex))) +
   )
 ```
 
-Seems like the sex in relation to survival is relatively balanced here. Next, we 
+Seems like the sex in relation to survival is relatively balanced here. We can note that it seems like a larger portion of those surviving are females. Next, we look at the breeding coefficient.
 
 ```{r}
 ggplot(qg.data.gg.inds, aes(x = f.coef, fill = factor(surv.ind.to.ad))) +
