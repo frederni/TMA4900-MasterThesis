@@ -148,7 +148,7 @@ formula.surv.ind.to.ad = surv.ind.to.ad ~ f.coef.sc + g1.sc + natalyr.no.sc + br
 r.inla.surv.ind.to.ad = inla(formula=formula.surv.ind.to.ad, family="binomial",
                              data=qg.data.gg.inds,
                              control.compute=list(dic=T), # config = TRUE
-                             control.family = list(link = "probit")
+                             control.family = list(link = "logit")
 )
 
 #' Check if there is a problem (ok of =0) and dic
@@ -176,7 +176,7 @@ sample.posterior <- inla.hyperpar.sample(n=nsamples,r.inla.surv.ind.to.ad)
 
 h2.inla <- 1/sample.posterior[,"Precision for id"] / ((
   1/sample.posterior[,"Precision for id"]) + (1/sample.posterior[,"Precision for natalyr.id"]) +
-    (1/sample.posterior[,"Precision for nestrec"]) + 0)
+    (1/sample.posterior[,"Precision for nestrec"]) + pi^2/3) # !!
 
 par(mfrow=c(1,1))
 truehist(h2.inla)
@@ -212,7 +212,7 @@ h2.from.qgparams <- function(inla.fit, modelname, n, n.obs=nrow(d.ped)){
   return(out)
 }
 
-binom.probit.h2.datascale.qgpar = h2.from.qgparams(r.inla.surv.ind.to.ad, "binomN.probit", 10000)
+binom.probit.h2.datascale.qgpar = h2.from.qgparams(r.inla.surv.ind.to.ad, "binomN.logit", 10000)
 
 
 qgparam.mu = r.inla.surv.ind.to.ad$summary.fixed$mean[1]

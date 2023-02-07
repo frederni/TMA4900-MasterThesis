@@ -84,6 +84,7 @@ qg.data.gg.inds$u <- 1:nrow(qg.data.gg.inds)
 
 The general INLA formula is provided below, where `f()` encode the random effect:
 ```{r}
+
 formula.inla.scaled = surv.ind.to.ad ~ f.coef.sc + g1.sc + natalyr.no.sc + brood.date.sc + sex +
   f(nestrec, model="iid",hyper=list(
     prec=list(initial=log(1/0.05), prior="pc.prec",param=c(1,0.05)) # PC priors
@@ -93,7 +94,7 @@ formula.inla.scaled = surv.ind.to.ad ~ f.coef.sc + g1.sc + natalyr.no.sc + brood
   )) +
   f(id,model="generic0", # Here we need to specify the covariance matrix 
     Cmatrix=Cmatrix,     #    via the inverse (Cmatrix)
-    # constr = TRUE,
+    constr = F, # Doesn't really matter
     hyper=list(
       prec=list(initial=log(1/10), prior="pc.prec",param=c(1,0.05)) # PC priors
     ))  #+ # this last part is only needed if the u~N(0,1) residuals are included
@@ -132,16 +133,17 @@ We define a general method for looking at the results of an INLA model.
 ```{r}
 analyze.inla.fit <- function(inla.fit){
   #' Check if there is a problem (ok of =0) and dic
-  inla.fit$mode$mode.status
-  inla.fit$dic$dic
+  print(paste(inla.fit$mode$mode.status,
+  inla.fit$dic$dic))
   
-  summary(inla.fit)
+  print(summary(inla.fit))
   
-  inla.fit$summary.hyperpar
-  inla.fit$summary.fixed
+  #inla.fit$summary.hyperpar,
+  #inla.fit$summary.fixed,
   
-  inla_mmarginal(inla.fit)
-  inla_emarginal(inla.fit)
+  #inla_mmarginal(inla.fit),
+  #inla_emarginal(inla.fit)
+  #))
   
   #' Plotting the posterior marginals for the variances; This is a bit cumbersome,
   #' because INLA works with precisions, so we need a transformation. 
@@ -160,6 +162,8 @@ analyze.inla.fit <- function(inla.fit){
     function(x) 1/x,inla.fit$marginals.hyperpar$`Precision for id`),
     type="l",main="animal")
 }
+
+analyze.inla.fit(fit.inla.probit.sc)
 
 ```
 
@@ -213,7 +217,7 @@ We extend the contents of the INLA fit to include heritabilities on the differen
 n.samples = 10000
 fit.inla.gaussian$h2.latent = get.h2(fit.inla.gaussian, n.samples)
 fit.inla.logit$h2.latent = get.h2(fit.inla.logit, n.samples)
-fit.inla.probit$h2.latent = get.h2(fit.inla.probit, n.samples)
+fit.inla.probit.sc$h2.latent = get.h2(fit.inla.probit.sc, n.samples)
 
 fit.inla.logit$h2.scaled = get.h2(fit.inla.logit, n.samples, use.scale=T,
                                   model="binomN.logit")
@@ -305,7 +309,6 @@ Z <- diag(Nid)
 sigmaA <- 0.4
 # pedigree <- ped0[ ,1:3]
 u <- rbv(pedigree, sigmaA) # Breeding values for each individual 
-## We get: the condition has length > 1 and only the first element will be used #??? 
 
 # How do we generate the rest of the data tho? Like number survived and whatnot
 ```
@@ -316,4 +319,24 @@ simulated.d.ped <- pedigree
 simulated.d.ped <- nadiv::prepPed(simulated.d.ped)
 simulated.Cmatrix <- nadiv::makeAinv(simulated.d.ped)$Ainv # TODO might need to index here?
 
+# assign random response, 50%-50%
+simulated.d.ped$response = sample(0:1, size=nrow(simulated.d.ped), replace=T)
+head(simulated.d.ped)
+
+simulated.formula = response ~ 1 + # Intercept + a_i only
+  f(id,model="generic0",
+    Cmatrix=simulated.Cmatrix,     
+    constr = F, # Shouldn't matter
+    hyper=list(
+      prec=list(initial=log(1/10), prior="pc.prec",param=c(1,0.05)) # PC priors
+    ))
+
+simulated.fit.inla = inla(formula=simulated.formula, family="binomial",
+                             data=simulated.d.ped,
+                             control.compute=list(dic=T),
+                             control.family = list(link = "probit")
+)
+
+summary(simulated.fit.inla)
+simulated.fit.inla$mode$mode.status
 ``` 
