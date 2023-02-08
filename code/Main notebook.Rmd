@@ -123,8 +123,52 @@ fit.inla.logit = inla(formula=formula.inla.scaled, family="binomial",
 
 fit.inla.gaussian = inla(formula=formula.inla.scaled, family="gaussian",
                              data=qg.data.gg.inds,
-                             control.compute=list(dic=T) 
+                             control.compute=list(dic=T, cpo=T) 
 )
+
+
+```
+
+## Residual analyses on Gaussian model
+For the Gaussian INLA model we also compute PIT. From example (don't copy this!) "The PIT is the probability of a new response less than the observed response using a model based on the rest of the data. We’d expect the PIT values to be uniformly distributed if the model assumptions are correct." [From here](https://julianfaraway.github.io/brinla/examples/chicago.html).
+
+The first plot obviously shows a non-linear trend but rather a sigmoid-like curve. This is interesting!
+
+The second plot shows the fitted values as a function of PIT. Not sure how it should look like, but definately not like this!
+
+The third plot is the posterior means of the linear predictor for the Gaussian fit versus the same value for the probit model. If we compare logit to probit we see pretty close to a one-to-one correspondance. This is completely violated when comparing the Gaussian one to the two other models. 
+
+```{r}
+# Residual analysis on Gaussian INLA object:)
+pit.g = fit.inla.gaussian$cpo$pit
+plot(
+  (1:length(pit.g))/(length(pit.g)+1), sort(pit.g), xlab="Quantiles",
+  ylab="Sorted PIT values", main="Sorted PIT values for Gaussian model"
+)
+
+plot(fit.inla.gaussian$summary.fitted.values$mean, pit.g)
+
+par(mfrow=c(1,3))
+plot(fit.inla.logit$summary.linear.predictor[, 1],
+     fit.inla.probit$summary.linear.predictor[, 1],
+     main="Logit (x) versus Probit (y)", xlab="",ylab=""
+)
+abline(0,1)
+plot(fit.inla.gaussian$summary.linear.predictor[, 1],
+     fit.inla.probit$summary.linear.predictor[, 1],
+     main="Gaussian (x) versus Probit (y)", xlab="", ylab=""
+)
+abline(0,1)
+plot(fit.inla.gaussian$summary.linear.predictor[, 1],
+     fit.inla.logit$summary.linear.predictor[, 1],
+     main="Gaussian (x) versus Probit (y)", xlab="", ylab=""
+)
+abline(0,1)
+
+## Just plot PIT also shows a clear separation in the "residuals"
+plot(pit.g)
+
+## 
 
 ```
 
