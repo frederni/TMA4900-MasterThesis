@@ -9,6 +9,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 # Acknowledgements
+
 The data and a large portion of data preprocessing is provided by Jane Reid. The re-implementation into INLA is also largely based on the work from Stefanie Muff.
 
 # Data loading
@@ -20,8 +21,20 @@ library(nadiv)
 library(bdsmatrix)
 library(INLA)
 library(QGglmm)
-library(SMisc)
+# library(SMisc)
 library(ggplot2)
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+if (!require("GeneticsPed", quietly = TRUE))
+    BiocManager::install("GeneticsPed")
+# library(devtools)
+# install_github('timcdlucas/INLAutils')
+# library(INLAutils)
+
+# library("pedigree")
+library("GeneticsPed") 
+library("MCMCglmm")
+
 
 qg.data.gg.inds <- read.table("../data/qg.data.gg.inds.steffi.txt", header=T)
 d.ped <- ped.prune.inds <- read.table("../data/ped.prune.inds.steffi.txt", header=T)
@@ -32,6 +45,7 @@ qg.data.gg.inds$natalyr.id <- qg.data.gg.inds$natalyr.no
 ```
 
 Scaling continuous variances can be more stable: (I think?)
+
 ```{r}
 qg.data.gg.inds$f.coef.sc <- scale(qg.data.gg.inds$f.coef,scale=FALSE)
 qg.data.gg.inds$g1.sc <- scale(qg.data.gg.inds$g1,scale=FALSE)
@@ -40,6 +54,7 @@ qg.data.gg.inds$brood.date.sc <- scale(qg.data.gg.inds$brood.date,scale=FALSE)
 ```
 
 The sex covariate is either `1` or `2`, so we binarize this covariate:
+
 ```{r}
 qg.data.gg.inds$sex <- qg.data.gg.inds$sex.use.x1 - 1 
 ```
@@ -47,16 +62,19 @@ qg.data.gg.inds$sex <- qg.data.gg.inds$sex.use.x1 - 1
 ## Deriving *A*
 
 In order to derive the A matrix, we need to work a bit
+
 ```{r}
 d.ped <- nadiv::prepPed(d.ped)
 ```
 
 In particular, for INLA we need ids that run from 1 to the number of individuals
+
 ```{r}
 d.ped$id <- 1:(nrow(d.ped))
 ```
 
 Need a map file to keep track of the ids
+
 ```{r}
 d.map <- d.ped[,c("ninecode","id")]
 d.map$g1 <- d.Q[match(d.map$ninecode,d.Q$ninecode),"g1"]
@@ -64,17 +82,20 @@ d.map$foc0 <- d.Q[match(d.map$ninecode,d.Q$ninecode),"foc0"]
 ```
 
 Give mother and father the id
+
 ```{r}
 d.ped$mother.id <- d.map[match(d.ped$gendam, d.map$ninecode),"id"]
 d.ped$father.id <- d.map[match(d.ped$gensire, d.map$ninecode),"id"]
 ```
 
 Make the inverse A matrix using the `nadiv` package:
+
 ```{r}
 Cmatrix <- nadiv::makeAinv(d.ped[,c("id","mother.id","father.id")])$Ainv
 ```
 
 Store the id twice: Once for the breeding value, and once for the independent residuals u with variance 1 (the latter are not going to be included in the end, but we checked what happened when they were there)
+
 ```{r}
 qg.data.gg.inds$id <- d.map[match(qg.data.gg.inds$ninecode, d.map$ninecode), "id"]
 qg.data.gg.inds$u <- 1:nrow(qg.data.gg.inds)
@@ -83,6 +104,7 @@ qg.data.gg.inds$u <- 1:nrow(qg.data.gg.inds)
 # INLA
 
 The general INLA formula is provided below, where `f()` encode the random effect:
+
 ```{r}
 
 formula.inla.scaled = surv.ind.to.ad ~ f.coef.sc + g1.sc + natalyr.no.sc + brood.date.sc + sex +
@@ -97,7 +119,7 @@ formula.inla.scaled = surv.ind.to.ad ~ f.coef.sc + g1.sc + natalyr.no.sc + brood
     constr = F, # Doesn't really matter
     hyper=list(
       prec=list(initial=log(1/10), prior="pc.prec",param=c(1,0.05)) # PC priors
-    ))  #+ # this last part is only needed if the u~N(0,1) residuals are included
+     ))  #+ # this last part is only needed if the u~N(0,1) residuals are included
 # f(u, model="iid",
 #   constr=TRUE,
 #   hyper=list(
@@ -125,18 +147,17 @@ fit.inla.gaussian = inla(formula=formula.inla.scaled, family="gaussian",
                              data=qg.data.gg.inds,
                              control.compute=list(dic=T, cpo=T) 
 )
-
-
 ```
 
 ## Residual analyses on Gaussian model
-For the Gaussian INLA model we also compute PIT. From example (don't copy this!) "The PIT is the probability of a new response less than the observed response using a model based on the rest of the data. We’d expect the PIT values to be uniformly distributed if the model assumptions are correct." [From here](https://julianfaraway.github.io/brinla/examples/chicago.html).
+
+For the Gaussian INLA model we also compute PIT. From example (don't copy this!) "The PIT is the probability of a new response less than the observed response using a model based on the rest of the data. We'd expect the PIT values to be uniformly distributed if the model assumptions are correct." [From here](https://julianfaraway.github.io/brinla/examples/chicago.html).
 
 The first plot obviously shows a non-linear trend but rather a sigmoid-like curve. This is interesting!
 
 The second plot shows the fitted values as a function of PIT. Not sure how it should look like, but definately not like this!
 
-The third plot is the posterior means of the linear predictor for the Gaussian fit versus the same value for the probit model. If we compare logit to probit we see pretty close to a one-to-one correspondance. This is completely violated when comparing the Gaussian one to the two other models. 
+The third plot is the posterior means of the linear predictor for the Gaussian fit versus the same value for the probit model. If we compare logit to probit we see pretty close to a one-to-one correspondance. This is completely violated when comparing the Gaussian one to the two other models.
 
 ```{r}
 # Residual analysis on Gaussian INLA object:)
@@ -168,7 +189,18 @@ abline(0,1)
 ## Just plot PIT also shows a clear separation in the "residuals"
 plot(pit.g)
 
-## 
+## other experimental stuff
+
+# Compute residuals from the 50% quantile of fitted values
+# Scale residuals by multiplying the square of the precisions? Currently: no scaling
+n.obs = length(qg.data.gg.inds$u)
+resids = qg.data.gg.inds$surv.ind.to.ad - fit.inla.gaussian$summary.fitted.values$`0.5quant`
+plot(resids)
+
+est.mean = mean(qg.data.gg.inds$surv.ind.to.ad)
+est.sd = sd(qg.data.gg.inds$surv.ind.to.ad)
+# sum(fit.inla.gaussian$summary.hyperpar$`0.5quant`^2)
+qqplot(qnorm(ppoints(n.obs), est.mean, est.sd), resids)
 
 ```
 
@@ -207,11 +239,12 @@ analyze.inla.fit <- function(inla.fit){
     type="l",main="animal")
 }
 
-analyze.inla.fit(fit.inla.probit.sc)
+analyze.inla.fit(fit.inla.probit)
 
 ```
 
 Below is a method used to obtain posterior distribution of the back-transformed heritability:
+
 ```{r}
 get.h2 <- function(inla.fit, n, use.scale=F, model=NA){
   samples <- inla.hyperpar.sample(n=n,inla.fit)
@@ -221,8 +254,8 @@ get.h2 <- function(inla.fit, n, use.scale=F, model=NA){
   
   if(use.scale){
     # We need model specification to use scale
-    stopifnot(model %in% c("binomN.probit", "binomN.logit"))
-    scale.param = ifelse(model == "binomN.probit", 1, pi^2/3)
+    stopifnot(model %in% c("binom1.probit", "binom1.logit"))
+    scale.param = ifelse(model == "binom1.probit", 1, pi^2/3)
     denominator = denominator + scale.param
   }
   
@@ -239,7 +272,7 @@ get.h2.from.qgparams <- function(inla.fit, modelname, n, n.obs=nrow(d.ped)){
   #'    ("Gaussian", "binomN.probit", "binomN.logit")
   #' n.obs      keyword argument if binomial model is has N != 1 trials
   #'    NB: Should explicitly be set to NULL if not relevant (Gaussian model)
-  stopifnot(modelname %in% c("Gaussian", "binomN.probit", "binomN.logit"))
+  stopifnot(modelname %in% c("Gaussian", "binom1.probit", "binom1.logit"))
   samples.posterior <- inla.hyperpar.sample(n=n,inla.fit)
   mu = inla.fit$summary.fixed$mean[1]
   va.samples = 1/samples.posterior[,"Precision for id"]
@@ -247,7 +280,7 @@ get.h2.from.qgparams <- function(inla.fit, modelname, n, n.obs=nrow(d.ped)){
     1/samples.posterior[,"Precision for natalyr.id"] +
     1/samples.posterior[,"Precision for nestrec"]
   
-  kwargs = list(n.obs=n.obs, verbose=F)
+  kwargs = list(verbose=F)
   h2.getter = function(...){get("h2.obs", suppressWarnings(QGparams(...)))}
   out = mapply(h2.getter, mu, va.samples, vp.samples, modelname, MoreArgs=kwargs)
   return(out)
@@ -261,20 +294,21 @@ We extend the contents of the INLA fit to include heritabilities on the differen
 n.samples = 10000
 fit.inla.gaussian$h2.latent = get.h2(fit.inla.gaussian, n.samples)
 fit.inla.logit$h2.latent = get.h2(fit.inla.logit, n.samples)
-fit.inla.probit.sc$h2.latent = get.h2(fit.inla.probit.sc, n.samples)
+fit.inla.probit$h2.latent = get.h2(fit.inla.probit, n.samples)
 
 fit.inla.logit$h2.scaled = get.h2(fit.inla.logit, n.samples, use.scale=T,
-                                  model="binomN.logit")
+                                  model="binom1.logit")
 fit.inla.probit$h2.scaled = get.h2(fit.inla.probit, n.samples,use.scale=T,
-                                   model="binomN.probit")
+                                   model="binom1.probit")
 
-fit.inla.logit$h2.qgglmm  = get.h2.from.qgparams(fit.inla.logit, "binomN.logit", n.samples)
-fit.inla.probit$h2.qgglmm = get.h2.from.qgparams(fit.inla.probit, "binomN.probit", n.samples)
+fit.inla.logit$h2.qgglmm  = get.h2.from.qgparams(fit.inla.logit, "binom1.logit", n.samples)
+fit.inla.probit$h2.qgglmm = get.h2.from.qgparams(fit.inla.probit, "binom1.probit", n.samples)
 ```
 
 Plotting some histograms:
 
 Trying one with all overlapping:
+
 ```{r}
 df.latent.h2 = data.frame(samples=c(unname(fit.inla.logit$h2.latent), unname(fit.inla.probit$h2.latent)),
                       Model=c(
@@ -311,18 +345,34 @@ ggplot(df.transformed.h2, aes(x=samples, fill=Model)) +
   ylab("Density")
 ```
 
+Let's try to make table dynamic:
+
+```{r}
+get_mode <- function(vec){
+  d = density(vec)
+  d$x[which.max(d$y)]
+}
+
+lol_test <- function(fit, param){
+  paste(mean(get(fit, param)), get_mode(get(fit, param)), sd(get(fit,param)), sep=", ")
+} # ## # # TODO figure a better way to do this dynamically...
+
+lol_test(fit.inla.probit, h2.latent)
+
+knitr::kable(data.frame(
+  mean(fit.inla.logit$h2.latent),
+  mean(fit.inla.probit$h2.latent),
+  mean(fit.inla.gaussian$h2.latent)
+  ),
+  format="html",
+  col.names=c("Logit", "Probit", "Gaussian")
+  )
+```
+
 # Simulation data
 
 ```{r}
 
-if (!require("BiocManager", quietly = TRUE))
-    install.packages("BiocManager")
-if (!require("GeneticsPed", quietly = TRUE))
-    BiocManager::install("GeneticsPed")
-
-# library("pedigree")
-library("GeneticsPed") 
-library("MCMCglmm")
 
 # set a value for the Ne/Nc ratio
 # here is 0.5 but it can be set to 0.15 or 0.05
@@ -355,9 +405,11 @@ sigmaA <- 0.4
 u <- rbv(pedigree, sigmaA) # Breeding values for each individual 
 
 # How do we generate the rest of the data tho? Like number survived and whatnot
+
 ```
 
 Now we try to run it through the model pipeline:
+
 ```{r}
 simulated.d.ped <- pedigree
 simulated.d.ped <- nadiv::prepPed(simulated.d.ped)
@@ -383,4 +435,4 @@ simulated.fit.inla = inla(formula=simulated.formula, family="binomial",
 
 summary(simulated.fit.inla)
 simulated.fit.inla$mode$mode.status
-``` 
+```
