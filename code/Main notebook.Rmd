@@ -27,11 +27,7 @@ if (!require("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
 if (!require("GeneticsPed", quietly = TRUE))
     BiocManager::install("GeneticsPed")
-# library(devtools)
-# install_github('timcdlucas/INLAutils')
-# library(INLAutils)
 
-# library("pedigree")
 library("GeneticsPed") 
 library("MCMCglmm")
 
@@ -119,12 +115,12 @@ formula.inla.scaled = surv.ind.to.ad ~ f.coef.sc + g1.sc + natalyr.no.sc + brood
     constr = F, # Doesn't really matter
     hyper=list(
       prec=list(initial=log(1/10), prior="pc.prec",param=c(1,0.05)) # PC priors
-     ))  #+ # this last part is only needed if the u~N(0,1) residuals are included
-# f(u, model="iid",
-#   constr=TRUE,
-#   hyper=list(
-#     prec=list(initial=log(1), fixed=TRUE) # Fixed variance to 1
-#   )) # This last component adds the independent residuals with variance 1;
+     ))  + # this last part is only needed if the u~N(0,1) residuals are included
+f(u, model="iid",
+  constr=TRUE,
+  hyper=list(
+    prec=list(initial=log(1), fixed=TRUE) # Fixed variance to 1
+  )) # This last component adds the independent residuals with variance 1;
 ```
 
 Now we call INLA models, this is the slowest part:
@@ -162,45 +158,60 @@ The third plot is the posterior means of the linear predictor for the Gaussian f
 ```{r}
 # Residual analysis on Gaussian INLA object:)
 pit.g = fit.inla.gaussian$cpo$pit
+
+# <Plot 1> Analogous to QQ-plot so should be linear
+# --------
 plot(
   (1:length(pit.g))/(length(pit.g)+1), sort(pit.g), xlab="Quantiles",
   ylab="Sorted PIT values", main="Sorted PIT values for Gaussian model"
 )
 
-plot(fit.inla.gaussian$summary.fitted.values$mean, pit.g)
+# <Plot 2> Posterior mean fitted values as a function of PIT values
+# --------    analagous to "Residuals vs fitted"
+plot(fit.inla.gaussian$summary.fitted.values$mean, pit.g,
+     xlab="Posterior mean fitted values",
+     ylab="PIT values", main="Posterior mean vs. PIT values"
+     )
 
+# <Plot 3> Mean linear predictor of different models, showing 
+# --------    how different predictors for the models are
 par(mfrow=c(1,3))
 plot(fit.inla.logit$summary.linear.predictor[, 1],
      fit.inla.probit$summary.linear.predictor[, 1],
-     main="Logit (x) versus Probit (y)", xlab="",ylab=""
+     main="\nLogit (x) versus Probit (y)", xlab="",ylab=""
 )
 abline(0,1)
 plot(fit.inla.gaussian$summary.linear.predictor[, 1],
      fit.inla.probit$summary.linear.predictor[, 1],
-     main="Gaussian (x) versus Probit (y)", xlab="", ylab=""
+     main="\nGaussian (x) versus Probit (y)", xlab="", ylab=""
 )
 abline(0,1)
 plot(fit.inla.gaussian$summary.linear.predictor[, 1],
      fit.inla.logit$summary.linear.predictor[, 1],
-     main="Gaussian (x) versus Probit (y)", xlab="", ylab=""
+     main="\nGaussian (x) versus Probit (y)", xlab="", ylab=""
 )
 abline(0,1)
+mtext("Mean linear predictor of the different models",
+      side = 3, line = -1, outer = TRUE)
 
-## Just plot PIT also shows a clear separation in the "residuals"
-plot(pit.g)
-
-## other experimental stuff
+# <Plot 4> Plot of 'residuals', i.e. difference in true data and the 
+# --------    50% quantile of the fitted values
 
 # Compute residuals from the 50% quantile of fitted values
 # Scale residuals by multiplying the square of the precisions? Currently: no scaling
 n.obs = length(qg.data.gg.inds$u)
-resids = qg.data.gg.inds$surv.ind.to.ad - fit.inla.gaussian$summary.fitted.values$`0.5quant`
-plot(resids)
+resids = qg.data.gg.inds$surv.ind.to.ad -
+  fit.inla.gaussian$summary.fitted.values$`0.5quant`
+par(mfrow=c(1,1))
+plot(resids, main="Residuals of Gaussian model", ylab="")
 
-est.mean = mean(qg.data.gg.inds$surv.ind.to.ad)
-est.sd = sd(qg.data.gg.inds$surv.ind.to.ad)
-# sum(fit.inla.gaussian$summary.hyperpar$`0.5quant`^2)
-qqplot(qnorm(ppoints(n.obs), est.mean, est.sd), resids)
+# <Plot 5> Recreation of QQ plot using residuals computed above instead of PIT values
+qqplot(qnorm(ppoints(n.obs),
+             mean = mean(qg.data.gg.inds$surv.ind.to.ad),
+             sd = sd(qg.data.gg.inds$surv.ind.to.ad)
+             ),
+       resids, xlab="Theoretical quantiles", ylab="Sample Quantiles",
+       main="Q-Q plot from 'residuals' above")
 
 ```
 
@@ -208,6 +219,7 @@ We define a general method for looking at the results of an INLA model.
 
 ```{r}
 analyze.inla.fit <- function(inla.fit){
+  # Collecting diagnostic functions in this method:-)
   #' Check if there is a problem (ok of =0) and dic
   print(paste(inla.fit$mode$mode.status,
   inla.fit$dic$dic))
@@ -239,7 +251,7 @@ analyze.inla.fit <- function(inla.fit){
     type="l",main="animal")
 }
 
-analyze.inla.fit(fit.inla.probit)
+# analyze.inla.fit(fit.inla.probit)
 
 ```
 
@@ -269,7 +281,7 @@ get.h2.from.qgparams <- function(inla.fit, modelname, n, n.obs=nrow(d.ped)){
   #' Params:
   #' inlafit    the fitted INLA object
   #' modelname  a string specifying model
-  #'    ("Gaussian", "binomN.probit", "binomN.logit")
+  #'    ("Gaussian", "binomN1.probit", "binom1.logit")
   #' n.obs      keyword argument if binomial model is has N != 1 trials
   #'    NB: Should explicitly be set to NULL if not relevant (Gaussian model)
   stopifnot(modelname %in% c("Gaussian", "binom1.probit", "binom1.logit"))
@@ -338,10 +350,10 @@ df.transformed.h2 = data.frame(
     )
   )
 
-ggplot(df.transformed.h2, aes(x=samples, fill=Model)) +
+ggplot(df.transformed.h2, aes(x=log(samples), fill=Model)) +
   geom_density(alpha=0.5) +
   ggtitle("Posterior of transformed heritability") +
-  xlab("(Latent-scale) Heritability") +
+  xlab("(Latent-scale) Log-heritability") +
   ylab("Density")
 ```
 
@@ -353,20 +365,38 @@ get_mode <- function(vec){
   d$x[which.max(d$y)]
 }
 
-lol_test <- function(fit, param){
-  paste(mean(get(fit, param)), get_mode(get(fit, param)), sd(get(fit,param)), sep=", ")
-} # ## # # TODO figure a better way to do this dynamically...
+print_one_metric <- function(fit, param, digits){
+  paste(
+    round(mean(get(param, fit)),digits), " (",
+    round(get_mode(get(param, fit)),digits), ") \\pm ",
+    round(sd(get(param,fit)),digits), sep="")
+}
+print_metrics <- function(fit,digits){
+  out = c()
+  param_names = c("h2.scaled", "h2.qgglmm")
+  # Deal with latent first
+  out[1] = print_one_metric(fit, "h2.latent", digits)
+  for(i in 2:3){
+    if('fit.inla.gaussian' != deparse(substitute(fit))){
+      out[i] <- print_one_metric(fit,param_names[i-1], digits)
+    }
+    else{
+      out[i] <- "--"
+    }
+  }
+  return(out)
+}
 
-lol_test(fit.inla.probit, h2.latent)
 
-knitr::kable(data.frame(
-  mean(fit.inla.logit$h2.latent),
-  mean(fit.inla.probit$h2.latent),
-  mean(fit.inla.gaussian$h2.latent)
-  ),
-  format="html",
-  col.names=c("Logit", "Probit", "Gaussian")
+heritabilities = data.frame(
+  logit=print_metrics(fit.inla.logit, 4),
+  probit=print_metrics(fit.inla.probit, 4),
+  gaussian=print_metrics(fit.inla.gaussian, 4)
   )
+rownames(heritabilities) = c("Latent", "Scaled", "QGglmm")
+
+heritabilities
+
 ```
 
 # Simulation data
