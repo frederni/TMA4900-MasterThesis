@@ -115,12 +115,12 @@ formula.inla.scaled = surv.ind.to.ad ~ f.coef.sc + g1.sc + natalyr.no.sc + brood
     constr = F, # Doesn't really matter
     hyper=list(
       prec=list(initial=log(1/10), prior="pc.prec",param=c(1,0.05)) # PC priors
-     ))  + # this last part is only needed if the u~N(0,1) residuals are included
-f(u, model="iid",
-  constr=TRUE,
-  hyper=list(
-    prec=list(initial=log(1), fixed=TRUE) # Fixed variance to 1
-  )) # This last component adds the independent residuals with variance 1;
+     ))  # + # this last part is only needed if the u~N(0,1) residuals are included
+# f(u, model="iid",
+#   constr=TRUE,
+#   hyper=list(
+#     prec=list(initial=log(1), fixed=TRUE) # Fixed variance to 1
+#   )) # This last component adds the independent residuals with variance 1;
 ```
 
 Now we call INLA models, this is the slowest part:
@@ -365,37 +365,64 @@ get_mode <- function(vec){
   d$x[which.max(d$y)]
 }
 
+model.name = unlist(strsplit("test.hei", "[.]"))[2]
+
+
 print_one_metric <- function(fit, param, digits){
-  paste(
+  cat(
     round(mean(get(param, fit)),digits), " (",
-    round(get_mode(get(param, fit)),digits), ") \\pm ",
+    round(get_mode(get(param, fit)),digits), ")\\newline $\\pm$ ",
     round(sd(get(param,fit)),digits), sep="")
 }
-print_metrics <- function(fit,digits){
-  out = c()
-  param_names = c("h2.scaled", "h2.qgglmm")
-  # Deal with latent first
-  out[1] = print_one_metric(fit, "h2.latent", digits)
-  for(i in 2:3){
-    if('fit.inla.gaussian' != deparse(substitute(fit))){
-      out[i] <- print_one_metric(fit,param_names[i-1], digits)
-    }
-    else{
-      out[i] <- "--"
-    }
-  }
-  return(out)
-}
 
-
-heritabilities = data.frame(
-  logit=print_metrics(fit.inla.logit, 4),
-  probit=print_metrics(fit.inla.probit, 4),
-  gaussian=print_metrics(fit.inla.gaussian, 4)
+print_heritability_table <- function(digits){
+  #' `digits` is the number of significant digits
+  #' Prints tabularx-table of heritability with posterior mean, posterior mode
+  #' and standard deviation. Does it for logit, probit and Gaussian.
+  header = cat( "% TABLE FROM R:", format(Sys.time(), "%a %b %d %X %Y"), "\n",
+  "\\begin{table}[ht]\\centering\n",
+    "\\begin{tabularx}{\\textwidth}{lXXX}\n",
+    "\\hline\n",
+    " & Binomial logit & Binomial probit & Gaussian  \\\\ \n",
+    "\\hline \n"
   )
-rownames(heritabilities) = c("Latent", "Scaled", "QGglmm")
+  main = cat(
+    "Latent &", print_one_metric(fit.inla.logit, "h2.latent", digits),
+    "&", print_one_metric(fit.inla.probit, "h2.latent", digits),
+    "&", print_one_metric(fit.inla.gaussian, "h2.latent", digits),
+    "\\\\ \n",
+    "Scaled &", print_one_metric(fit.inla.logit, "h2.scaled", digits),
+    "&", print_one_metric(fit.inla.probit, "h2.scaled", digits),
+    "& --",
+    "\\\\ \n",
+    "QGglmm &", print_one_metric(fit.inla.logit, "h2.qgglmm", digits),
+    "&", print_one_metric(fit.inla.logit, "h2.qgglmm", digits),
+    "& -- \n"
+  )
+  footer = cat("\\end{tabularx}",
+               "\\caption{<Insert caption>}",
+               "\\label{tab:heritabily gutta}",
+               "\\end{table}", sep="\n")
 
-heritabilities
+  cat(header, main, footer,sep="\n")
+  # # Old attempt trying to make it a bit more flexible
+  # out = c()
+  # # Deal with latent first
+  # out[1] = print_one_metric(fit, "h2.latent", digits)
+  # param_names = c("h2.scaled", "h2.qgglmm")
+  # for(i in 2:3){
+  #   if('fit.inla.gaussian' != deparse(substitute(fit))){
+  #     out[i] <- print_one_metric(fit,param_names[i-1], digits)
+  #   }
+  #   else{
+  #     # Special case for Gaussian model since it
+  #     # doesn't have any transformed variables
+  #     out[i] <- "--"
+  #   }
+  # }
+  # return(cat(out, "\\\\"))
+}
+print_metrics(4)
 
 ```
 
@@ -432,7 +459,7 @@ head(pedigree)
 Z <- diag(Nid)
 sigmaA <- 0.4
 # pedigree <- ped0[ ,1:3]
-u <- rbv(pedigree, sigmaA) # Breeding values for each individual 
+#u <- rbv(pedigree, sigmaA) # Breeding values for each individual 
 
 # How do we generate the rest of the data tho? Like number survived and whatnot
 
@@ -441,28 +468,28 @@ u <- rbv(pedigree, sigmaA) # Breeding values for each individual
 Now we try to run it through the model pipeline:
 
 ```{r}
-simulated.d.ped <- pedigree
-simulated.d.ped <- nadiv::prepPed(simulated.d.ped)
-simulated.Cmatrix <- nadiv::makeAinv(simulated.d.ped)$Ainv # TODO might need to index here?
-
-# assign random response, 50%-50%
-simulated.d.ped$response = sample(0:1, size=nrow(simulated.d.ped), replace=T)
-head(simulated.d.ped)
-
-simulated.formula = response ~ 1 + # Intercept + a_i only
-  f(id,model="generic0",
-    Cmatrix=simulated.Cmatrix,     
-    constr = F, # Shouldn't matter
-    hyper=list(
-      prec=list(initial=log(1/10), prior="pc.prec",param=c(1,0.05)) # PC priors
-    ))
-
-simulated.fit.inla = inla(formula=simulated.formula, family="binomial",
-                             data=simulated.d.ped,
-                             control.compute=list(dic=T),
-                             control.family = list(link = "probit")
-)
-
-summary(simulated.fit.inla)
-simulated.fit.inla$mode$mode.status
+# simulated.d.ped <- pedigree
+# simulated.d.ped <- nadiv::prepPed(simulated.d.ped)
+# simulated.Cmatrix <- nadiv::makeAinv(simulated.d.ped)$Ainv # TODO might need to index here?
+# 
+# # assign random response, 50%-50%
+# simulated.d.ped$response = sample(0:1, size=nrow(simulated.d.ped), replace=T)
+# head(simulated.d.ped)
+# 
+# simulated.formula = response ~ 1 + # Intercept + a_i only
+#   f(id,model="generic0",
+#     Cmatrix=simulated.Cmatrix,     
+#     constr = F, # Shouldn't matter
+#     hyper=list(
+#       prec=list(initial=log(1/10), prior="pc.prec",param=c(1,0.05)) # PC priors
+#     ))
+# 
+# simulated.fit.inla = inla(formula=simulated.formula, family="binomial",
+#                              data=simulated.d.ped,
+#                              control.compute=list(dic=T),
+#                              control.family = list(link = "probit")
+# )
+# 
+# summary(simulated.fit.inla)
+# simulated.fit.inla$mode$mode.status
 ```
