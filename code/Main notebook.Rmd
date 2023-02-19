@@ -262,9 +262,8 @@ Below is a method used to obtain posterior distribution of the back-transformed 
 ```{r}
 get.h2 <- function(inla.fit, n, use.scale=F, model=NA){
   samples <- inla.hyperpar.sample(n=n,inla.fit)
-
-  denominator = 1/samples[,"Precision for id"] + 1/samples[,"Precision for natalyr.id"] +
-    1/samples[,"Precision for nestrec"]
+  denominator = 0
+  for(cname in colnames(samples)){ denominator = denominator + 1/samples[, cname]}
   
   if(use.scale){
     # We need model specification to use scale
@@ -435,6 +434,19 @@ print_metrics(4)
 
 # set a value for the Ne/Nc ratio
 # here is 0.5 but it can be set to 0.15 or 0.05
+#Ne : Effective population size
+#'    determines the rates of genetic drift, loss of neutral genetic diversity
+#'    and increase in inbreeding experienced by a population.
+#Nc : Census population size
+#'    affects the degree of demographic stochasticity,
+#'    and is used to assess threat status.
+#'    See [here](
+#'    https://onlinelibrary.wiley.com/doi/full/10.1111/j.1095-8649.2011.03124.x
+#'    )
+#'    and [here](
+#'    https://onlinelibrary.wiley.com/doi/full/10.1111/j.1095-8649.2011.03124.x
+#'    )
+#'    
 NeNc <- 0.5
 # set other parameters 
 # (idgen = id per generations, nGen = number of generations)
@@ -463,7 +475,6 @@ sigmaA <- 0.4
 pedigree <- ped0[ ,1:3]
 u <- rbv(pedigree, sigmaA) # Breeding values for each individual
 
-# How do we generate the rest of the data tho? Like number survived and whatnot
 
 ```
 
@@ -495,7 +506,18 @@ simulated.fit.inla = inla(formula=simulated.formula, family="gaussian",
                              control.compute=list(dic=T)
 )
 
-summary(simulated.fit.inla)
+rownames(simulated.fit.inla$summary.hyperpar)
 simulated.fit.inla$mode$mode.status
 plot(simulated.fit.inla$summary.fitted.values$mean)
+
+test = get.h2(simulated.fit.inla, 10000)
+test = inla.hyperpar.sample(n=100,simulated.fit.inla)
+test[, 'Precision for id']
+
+#' * Fix number individuals and Ne/Nc
+#' * For different sigmaA (0.01, 0.05, 0.1, 0.25, 0.5, 0.75)
+#' * Fit INLA model
+#' * Compute h2
+#' * Report on computed h2 (posterior mean) and true h2
+#' * Try fixed sigmaA and varying Ne/Nc
 ```
