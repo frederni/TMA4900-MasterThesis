@@ -27,6 +27,8 @@ if (!require("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
 if (!require("GeneticsPed", quietly = TRUE))
     BiocManager::install("GeneticsPed")
+if (!require("MCMCglmm", quietly = TRUE))
+    install.packages("../MCMCglmm-rbv-patch.tar.gz")
 
 library("GeneticsPed") 
 library("MCMCglmm")
@@ -458,8 +460,8 @@ head(pedigree)
 # fix the additive variance value, here is 0.3 but it can be any value
 Z <- diag(Nid)
 sigmaA <- 0.4
-# pedigree <- ped0[ ,1:3]
-#u <- rbv(pedigree, sigmaA) # Breeding values for each individual 
+pedigree <- ped0[ ,1:3]
+u <- rbv(pedigree, sigmaA) # Breeding values for each individual
 
 # How do we generate the rest of the data tho? Like number survived and whatnot
 
@@ -468,28 +470,32 @@ sigmaA <- 0.4
 Now we try to run it through the model pipeline:
 
 ```{r}
-# simulated.d.ped <- pedigree
-# simulated.d.ped <- nadiv::prepPed(simulated.d.ped)
-# simulated.Cmatrix <- nadiv::makeAinv(simulated.d.ped)$Ainv # TODO might need to index here?
-# 
-# # assign random response, 50%-50%
-# simulated.d.ped$response = sample(0:1, size=nrow(simulated.d.ped), replace=T)
-# head(simulated.d.ped)
-# 
-# simulated.formula = response ~ 1 + # Intercept + a_i only
-#   f(id,model="generic0",
-#     Cmatrix=simulated.Cmatrix,     
-#     constr = F, # Shouldn't matter
-#     hyper=list(
-#       prec=list(initial=log(1/10), prior="pc.prec",param=c(1,0.05)) # PC priors
-#     ))
-# 
-# simulated.fit.inla = inla(formula=simulated.formula, family="binomial",
-#                              data=simulated.d.ped,
-#                              control.compute=list(dic=T),
-#                              control.family = list(link = "probit")
-# )
-# 
-# summary(simulated.fit.inla)
-# simulated.fit.inla$mode$mode.status
+
+
+## First model: Only use breeding values and some residuals
+simulated.mod0 <- u + rnorm(length(u), sd=1) # Question: Can I choose SD for the residuals? What can I base it on if not?
+sigmoid.scale <- function(x) exp(x)/(exp(x)+1)
+simulated.mod0.sc <- sigmoid.scale(simulated.mod0) # Pi expression
+simulated.response <- rbinom(length(u), size=1, prob=simulated.mod0.sc)
+
+
+simulated.d.ped <- nadiv::prepPed(pedigree)
+simulated.Cmatrix <- nadiv::makeAinv(simulated.d.ped)$Ainv 
+
+simulated.formula = simulated.response ~ -1 + # a_i (and residuals) only
+  f(id,model="generic0",
+    Cmatrix=simulated.Cmatrix,
+    constr = F, # Shouldn't matter
+    hyper=list(
+      prec=list(initial=log(1/10), prior="pc.prec",param=c(1,0.05)) # PC priors
+    ))
+
+simulated.fit.inla = inla(formula=simulated.formula, family="gaussian",
+                             data=simulated.d.ped,
+                             control.compute=list(dic=T)
+)
+
+summary(simulated.fit.inla)
+simulated.fit.inla$mode$mode.status
+plot(simulated.fit.inla$summary.fitted.values$mean)
 ```
