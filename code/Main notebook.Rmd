@@ -215,6 +215,14 @@ qqplot(qnorm(ppoints(n.obs),
        resids, xlab="Theoretical quantiles", ylab="Sample Quantiles",
        main="Q-Q plot from 'residuals' above")
 
+# <From that thing>
+ggplot(data.frame(
+  Fittedvalues = fit.inla.gaussian$summary.fitted.values$mean,
+  Residuals = resids),
+  aes(x=Fittedvalues, y=Residuals)) +
+  geom_point() + geom_smooth(se=T) +
+  labs(x="Fitted values", title="Violation of linearity assumtption")
+
 ```
 
 We define a general method for looking at the results of an INLA model.
@@ -303,7 +311,7 @@ get.h2.from.qgparams <- function(inla.fit, modelname, n, n.obs=nrow(d.ped)){
 We extend the contents of the INLA fit to include heritabilities on the different scales
 
 ```{r}
-# Running cell
+# Compute h2
 n.samples = 10000
 fit.inla.gaussian$h2.latent = get.h2(fit.inla.gaussian, n.samples)
 fit.inla.logit$h2.latent = get.h2(fit.inla.logit, n.samples)
@@ -356,6 +364,8 @@ ggplot(df.transformed.h2, aes(x=log(samples), fill=Model)) +
   ggtitle("Posterior of transformed heritability") +
   xlab("(Latent-scale) Log-heritability") +
   ylab("Density")
+
+
 ```
 
 Let's try to make table dynamic:
