@@ -158,6 +158,8 @@ The second plot shows the fitted values as a function of PIT. Not sure how it sh
 The third plot is the posterior means of the linear predictor for the Gaussian fit versus the same value for the probit model. If we compare logit to probit we see pretty close to a one-to-one correspondance. This is completely violated when comparing the Gaussian one to the two other models.
 
 ```{r}
+# TODO with these plots: Make them to ggplots instead so it's the same style (aesthethic) for all plots...
+
 # Residual analysis on Gaussian INLA object:)
 pit.g = fit.inla.gaussian$cpo$pit
 
@@ -269,6 +271,9 @@ Below is a method used to obtain posterior distribution of the back-transformed 
 
 ```{r}
 get.h2 <- function(inla.fit, n, use.scale=F, model=NA){
+  #' Get n samples of heritability from INLA fit
+  #' h^2 computed as reciprocal of precision for id, over the sum of 
+  #' (the reciprocal of) all random effects / hyperparameters 
   samples <- inla.hyperpar.sample(n=n,inla.fit)
   denominator = 0
   for(cname in colnames(samples)){ denominator = denominator + 1/samples[, cname]}
@@ -295,11 +300,12 @@ get.h2.from.qgparams <- function(inla.fit, modelname, n, n.obs=nrow(d.ped)){
   #'    NB: Should explicitly be set to NULL if not relevant (Gaussian model)
   stopifnot(modelname %in% c("Gaussian", "binom1.probit", "binom1.logit"))
   samples.posterior <- inla.hyperpar.sample(n=n,inla.fit)
+  vp.samples = 0
+  for(cname in colnames(samples.posterior)){
+    vp.samples = vp.samples + 1/samples.posterior[, cname]
+    }
   mu = inla.fit$summary.fixed$mean[1]
   va.samples = 1/samples.posterior[,"Precision for id"]
-  vp.samples = va.samples +
-    1/samples.posterior[,"Precision for natalyr.id"] +
-    1/samples.posterior[,"Precision for nestrec"]
   
   kwargs = list(verbose=F)
   h2.getter = function(...){get("h2.obs", suppressWarnings(QGparams(...)))}
@@ -521,8 +527,7 @@ simulated.fit.inla$mode$mode.status
 plot(simulated.fit.inla$summary.fitted.values$mean)
 
 test = get.h2(simulated.fit.inla, 10000)
-test = inla.hyperpar.sample(n=100,simulated.fit.inla)
-test[, 'Precision for id']
+
 
 #' * Fix number individuals and Ne/Nc
 #' * For different sigmaA (0.01, 0.05, 0.1, 0.25, 0.5, 0.75)
