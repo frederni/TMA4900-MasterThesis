@@ -293,11 +293,12 @@ get.h2.from.qgparams <- function(inla.fit, modelname, n, n.obs=nrow(d.ped)){
   #' Computes a posterior of data-scale heritability (h2) using QGParams
   #'  
   #' Params:
-  #' inlafit    the fitted INLA object
+  #' inla.fit    the fitted INLA object
   #' modelname  a string specifying model
   #'    ("Gaussian", "binomN1.probit", "binom1.logit")
   #' n.obs      keyword argument if binomial model is has N != 1 trials
   #'    NB: Should explicitly be set to NULL if not relevant (Gaussian model)
+  #'    Currently not in use as we're always dealing with binary (1 trial)
   stopifnot(modelname %in% c("Gaussian", "binom1.probit", "binom1.logit"))
   samples.posterior <- inla.hyperpar.sample(n=n,inla.fit)
   vp.samples = 0
@@ -463,33 +464,32 @@ print_metrics(4)
 #'    https://onlinelibrary.wiley.com/doi/full/10.1111/j.1095-8649.2011.03124.x
 #'    )
 #'    
-NeNc <- 0.5
-# set other parameters 
-# (idgen = id per generations, nGen = number of generations)
-idgen <- 100
-nGen <- 9
+simulated.heritability <- function(NeNc=0.5, idgen=100, nGen = 9, sigmaA=0.4,
+                                   simulated.response=NA, simulated.formula=NA){
+  # generate the pedigree using the function generatePedigree from GeneticsPed
+  # nFather and nMother are the number of fathers and mothers per generation
+  # they are generated according to the selected Ne/Nc ratio
+  ped0 <- generatePedigree(nId = idgen, nGeneration = nGen, 
+                           nFather = idgen * NeNc, nMother = idgen * NeNc)
+  # set correct format for pedigree
+  pedigree <- ped0[ , c(1,3,2)]
+  names(pedigree) <- c("id", "dam", "sire")
+  # generate breeding values (always constant)
+  
+  # using the function rbv from MCMCglmm
+  # fix the additive variance value, here is 0.3 but it can be any value
+  Z <- diag(Nid)
+  sigmaA <- 0.4
+  pedigree <- ped0[ ,1:3]
+  # The following will CRASH if you don't use the patched MCMCglmm package!
+  u <- rbv(pedigree, sigmaA) # Breeding values for each individual
+  
+  simulated.d.ped <- nadiv::prepPed(pedigree)
+  simulated.Cmatrix <- nadiv::makeAinv(simulated.d.ped)$Ainv 
+  
+  
+}
 
-# generate the pedigree using the function generatePedigree from GeneticsPed
-# nFather and nMother are the number of fathers and mothers per generation
-# they are generated according to the selected Ne/Nc ratio
-ped0 <- generatePedigree(nId = idgen, nGeneration = nGen, 
-                         nFather = idgen * NeNc, nMother = idgen * NeNc)  
-
-# N individuals
-Nid <- length(ped0$id)
-
-
-# set correct format for pedigree
-pedigree <- ped0[ , c(1,3,2)]
-names(pedigree) <- c("id", "dam", "sire")
-head(pedigree)
-# generate breeding values (always constant)
-# using the function rbv from MCMCglmm
-# fix the additive variance value, here is 0.3 but it can be any value
-Z <- diag(Nid)
-sigmaA <- 0.4
-pedigree <- ped0[ ,1:3]
-u <- rbv(pedigree, sigmaA) # Breeding values for each individual
 
 
 ```
@@ -506,8 +506,7 @@ simulated.mod0.sc <- sigmoid.scale(simulated.mod0) # Pi expression
 simulated.response <- rbinom(length(u), size=1, prob=simulated.mod0.sc)
 
 
-simulated.d.ped <- nadiv::prepPed(pedigree)
-simulated.Cmatrix <- nadiv::makeAinv(simulated.d.ped)$Ainv 
+
 
 simulated.formula = simulated.response ~ -1 + # a_i (and residuals) only
   f(id,model="generic0",
@@ -527,8 +526,8 @@ simulated.fit.inla$mode$mode.status
 plot(simulated.fit.inla$summary.fitted.values$mean)
 
 test = get.h2(simulated.fit.inla, 10000)
-
-
+mean(test)
+list(mean=mean(test), standard.deviation=sd(test), quantiles=quantile(test, probs=c(0.05, 0.5, 0.95)))
 #' * Fix number individuals and Ne/Nc
 #' * For different sigmaA (0.01, 0.05, 0.1, 0.25, 0.5, 0.75)
 #' * Fit INLA model
