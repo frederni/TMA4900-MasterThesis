@@ -130,15 +130,16 @@ Now we call INLA models, this is the slowest part:
 ```{r}
 
 fit.inla.probit = inla(formula=formula.inla.scaled, family="binomial",
-                             data=qg.data.gg.inds,
-                             control.compute=list(dic=T),
-                             control.family = list(link = "probit")
+                       data=qg.data.gg.inds,
+                       control.compute=list(dic=T, return.marginals.predictor=T),
+                       control.family = list(link = "probit"),
 )
 
 fit.inla.logit = inla(formula=formula.inla.scaled, family="binomial",
-                             data=qg.data.gg.inds,
-                             control.compute=list(dic=T), 
-                             control.family = list(link = "logit")
+                      data=qg.data.gg.inds,
+                      control.compute=list(dic=T, return.marginals.predictor=T),
+                      control.family = list(link = "logit"),
+                      control.predictor = list(compute=T)
 )
 
 fit.inla.gaussian = inla(formula=formula.inla.scaled, family="gaussian",
@@ -147,13 +148,19 @@ fit.inla.gaussian = inla(formula=formula.inla.scaled, family="gaussian",
 )
 ```
 
+A quick rundown of the `control` parameters we need. For the binomial models, we want to be able to use `QGglmm` and average over all fixed effects. This is done by supplying the *latent marginal predicted values*, which are not computed unless you pass the `control.compute` argument in the call, with this maringals predictor thing. We also want to compute CPO in the Gaussian model so we can look a bit at its "residuals" (PIT values). The last ones are:
+
+* `control.family` provides link function
+* `control.compute` with dic computes deviance information criteria which can be compared for the different models.
+
+
 ## Residual analyses on Gaussian model
 
 For the Gaussian INLA model we also compute PIT. From example (don't copy this!) "The PIT is the probability of a new response less than the observed response using a model based on the rest of the data. We'd expect the PIT values to be uniformly distributed if the model assumptions are correct." [From here](https://julianfaraway.github.io/brinla/examples/chicago.html).
 
 The first plot obviously shows a non-linear trend but rather a sigmoid-like curve. This is interesting!
 
-The second plot shows the fitted values as a function of PIT. Not sure how it should look like, but definately not like this!
+The second plot shows the fitted values as a function of PIT. Not sure how it should look like, but definitely not like this!
 
 The third plot is the posterior means of the linear predictor for the Gaussian fit versus the same value for the probit model. If we compare logit to probit we see pretty close to a one-to-one correspondance. This is completely violated when comparing the Gaussian one to the two other models.
 
@@ -230,6 +237,41 @@ ggplot(data.frame(
 We define a general method for looking at the results of an INLA model.
 
 ```{r}
+## This is a nice place to play around
+test = fit.inla.logit$marginals.linear.predictor
+lapply(test, mean)
+plot(test$Predictor.2) # 43x2 data for x and y...
+
+inla.posterior.marginal.latent.mode <- function(fit){
+  modes = c()
+  iter = 1
+  for(predictor in names(fit$marginals.linear.predictor)){
+    xy = get(predictor, fit$marginals.linear.predictor)
+    modes[iter] = xy[, "x"][which.max(xy[, "y"])]
+    iter = iter + 1
+  }
+  modes
+}
+
+report.max.skewness <- function(posterior){
+  #' Made esepcially for marginal linear predictor but should work on any
+  #' list containing named "x" and "y" columns
+  library(e1071)
+  iter = 1
+  posterior_skews = c()
+  for(predictor in names(posterior)){
+    posterior_skews[iter] = skewness(get(predictor, posterior)[, "x"])
+    iter = iter + 1
+  }
+  cat("Minimum skew for list no.", which.min(posterior_skews), "with skewness",
+      min(posterior_skews), "and max for list no.", which.max(posterior_skews),
+      "with skewness", max(posterior_skews), ".\n")
+}
+
+report.max.skewness(test)
+plot(test$Predictor.321)
+
+
 analyze.inla.fit <- function(inla.fit){
   # Collecting diagnostic functions in this method:-)
   #' Check if there is a problem (ok of =0) and dic
@@ -301,18 +343,52 @@ get.h2.from.qgparams <- function(inla.fit, modelname, n, n.obs=nrow(d.ped)){
   #'    Currently not in use as we're always dealing with binary (1 trial)
   stopifnot(modelname %in% c("Gaussian", "binom1.probit", "binom1.logit"))
   samples.posterior <- inla.hyperpar.sample(n=n,inla.fit)
+  marginal.mode = inla.posterior.marginal.latent.mode(inla.fit)
   vp.samples = 0
   for(cname in colnames(samples.posterior)){
     vp.samples = vp.samples + 1/samples.posterior[, cname]
     }
   mu = inla.fit$summary.fixed$mean[1]
   va.samples = 1/samples.posterior[,"Precision for id"]
-  
-  kwargs = list(verbose=F)
-  h2.getter = function(...){get("h2.obs", suppressWarnings(QGparams(...)))}
-  out = mapply(h2.getter, mu, va.samples, vp.samples, modelname, MoreArgs=kwargs)
+  # browser()
+  kwargs = list(verbose=T, model = modelname, predict = marginal.mode)
+  out = mapply(QGparams, NULL, va.samples, vp.samples, MoreArgs = kwargs)
+  return(out)
+  h2.getter = function(...){
+    cat(...)
+    get("h2.obs", suppressWarnings(QGparams(...)))
+    }
+  out = mapply(h2.getter,  MoreArgs=kwargs) # va.samples, vp.samples, modelname,
   return(out)
 }
+
+
+new.h2.transf <- function(fit, modelname, nsamples){
+  # This is very much WIP but works I think now
+  posterior.samples = inla.hyperpar.sample(nsamples, fit)
+  marginal.mode = inla.posterior.marginal.latent.mode(fit)
+  debug_mu = fit$summary.fixed$mean[1]
+  vp.samples = 0
+  for(cname in colnames(posterior.samples)){
+    vp.samples = vp.samples + 1/posterior.samples[, cname]
+    }
+  df <- data.frame(va = as.vector(1/posterior.samples[, "Precision for id"]),
+                   vp = as.vector(vp.samples)
+                   )
+  posterior = do.call("rbind", apply(df, 1, function(row){
+    QGparams(predict=marginal.mode, mu=debug_mu, var.a=row[["va"]], var.p=row[["vp"]],
+             model=modelname, verbose=F)
+  }))
+  posterior
+}
+
+t_before = Sys.time()
+new.h2.transf(fit.inla.logit, "binom1.logit", 100)
+cat("Time elapsed with rbind:", Sys.time()-t_before, "mins")
+t_before = Sys.time()
+
+
+
 ```
 
 We extend the contents of the INLA fit to include heritabilities on the different scales
@@ -464,8 +540,10 @@ print_metrics(4)
 #'    https://onlinelibrary.wiley.com/doi/full/10.1111/j.1095-8649.2011.03124.x
 #'    )
 #'    
+
 simulated.heritability <- function(NeNc=0.5, idgen=100, nGen = 9, sigmaA=0.4,
-                                   simulated.response=NA, simulated.formula=NA){
+                                   linear.predictor=NA, simulated.formula=NA){
+  # Remark: linear.predictor should be a callable and pass (at least) u
   # generate the pedigree using the function generatePedigree from GeneticsPed
   # nFather and nMother are the number of fathers and mothers per generation
   # they are generated according to the selected Ne/Nc ratio
@@ -477,8 +555,7 @@ simulated.heritability <- function(NeNc=0.5, idgen=100, nGen = 9, sigmaA=0.4,
   # generate breeding values (always constant)
   
   # using the function rbv from MCMCglmm
-  # fix the additive variance value, here is 0.3 but it can be any value
-  Z <- diag(Nid)
+  # fix the additive variance value, here is 0.4 but it can be any value
   sigmaA <- 0.4
   pedigree <- ped0[ ,1:3]
   # The following will CRASH if you don't use the patched MCMCglmm package!
@@ -487,7 +564,28 @@ simulated.heritability <- function(NeNc=0.5, idgen=100, nGen = 9, sigmaA=0.4,
   simulated.d.ped <- nadiv::prepPed(pedigree)
   simulated.Cmatrix <- nadiv::makeAinv(simulated.d.ped)$Ainv 
   
+  # Generating "true" y_i
+  sigmoid.scale <- function(x) exp(x)/(exp(x)+1)
+  simulated.response <- rbinom(length(u), size=1,
+                               prob=sigmoid.scale(linear.predictor(u)))
   
+  # Model fitting LMM for binary trait
+  # trying to re-load formula in the context of local variables
+  environment(simulated.formula) <- environment()
+  simulated.fit.inla = inla(formula=simulated.formula, family="gaussian",
+                             data=simulated.d.ped,
+                             control.compute=list(dic=T)
+                            )
+  # (debug) checking that INLA was able to fit model
+  stopifnot(simulated.fit.inla$mode$mode.status == 0) # status != 0 is trouble
+  
+  heritability = get.h2(simulated.fit.inla, 10000) #10k samples should be suff
+  list(
+    heritability=heritability,
+    summary=list(
+      mean=mean(heritability), standard.deviation=sd(heritability),
+       quantiles=quantile(heritability, probs=c(0.05, 0.5, 0.95)))
+  )
 }
 
 
@@ -498,16 +596,6 @@ Now we try to run it through the model pipeline:
 
 ```{r}
 
-
-## First model: Only use breeding values and some residuals
-simulated.mod0 <- u + rnorm(length(u), sd=1) # Question: Can I choose SD for the residuals? What can I base it on if not?
-sigmoid.scale <- function(x) exp(x)/(exp(x)+1)
-simulated.mod0.sc <- sigmoid.scale(simulated.mod0) # Pi expression
-simulated.response <- rbinom(length(u), size=1, prob=simulated.mod0.sc)
-
-
-
-
 simulated.formula = simulated.response ~ -1 + # a_i (and residuals) only
   f(id,model="generic0",
     Cmatrix=simulated.Cmatrix,
@@ -516,18 +604,11 @@ simulated.formula = simulated.response ~ -1 + # a_i (and residuals) only
       prec=list(initial=log(1/10), prior="pc.prec",param=c(1,0.05)) # PC priors
     ))
 
-simulated.fit.inla = inla(formula=simulated.formula, family="gaussian",
-                             data=simulated.d.ped,
-                             control.compute=list(dic=T)
-)
+simulation_results = simulated.heritability(linear.predictor = function(u) u+rnorm(length(u)),
+                       simulated.formula = simulated.formula)
 
-rownames(simulated.fit.inla$summary.hyperpar)
-simulated.fit.inla$mode$mode.status
-plot(simulated.fit.inla$summary.fitted.values$mean)
+truehist(simulation_results$heritability)
 
-test = get.h2(simulated.fit.inla, 10000)
-mean(test)
-list(mean=mean(test), standard.deviation=sd(test), quantiles=quantile(test, probs=c(0.05, 0.5, 0.95)))
 #' * Fix number individuals and Ne/Nc
 #' * For different sigmaA (0.01, 0.05, 0.1, 0.25, 0.5, 0.75)
 #' * Fit INLA model
