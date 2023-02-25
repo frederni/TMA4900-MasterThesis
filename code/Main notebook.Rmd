@@ -343,22 +343,19 @@ get.h2.from.qgparams <- function(inla.fit, modelname, n, n.obs=nrow(d.ped)){
   #'    Currently not in use as we're always dealing with binary (1 trial)
   stopifnot(modelname %in% c("Gaussian", "binom1.probit", "binom1.logit"))
   samples.posterior <- inla.hyperpar.sample(n=n,inla.fit)
-  marginal.mode = inla.posterior.marginal.latent.mode(inla.fit)
   vp.samples = 0
   for(cname in colnames(samples.posterior)){
     vp.samples = vp.samples + 1/samples.posterior[, cname]
     }
   mu = inla.fit$summary.fixed$mean[1]
   va.samples = 1/samples.posterior[,"Precision for id"]
-  # browser()
-  kwargs = list(verbose=T, model = modelname, predict = marginal.mode)
-  out = mapply(QGparams, NULL, va.samples, vp.samples, MoreArgs = kwargs)
-  return(out)
+  kwargs = list(verbose=F)
+  # out = mapply(QGparams, mu, va.samples, vp.samples, modelname, MoreArgs = kwargs)
   h2.getter = function(...){
     cat(...)
     get("h2.obs", suppressWarnings(QGparams(...)))
     }
-  out = mapply(h2.getter,  MoreArgs=kwargs) # va.samples, vp.samples, modelname,
+  out = mapply(h2.getter, mu, va.samples, vp.samples, modelname, MoreArgs=kwargs)
   return(out)
 }
 
@@ -383,11 +380,18 @@ new.h2.transf <- function(fit, modelname, nsamples){
 }
 
 t_before = Sys.time()
-new.h2.transf(fit.inla.logit, "binom1.logit", 100)
+transformed_heritability = new.h2.transf(fit.inla.logit, "binom1.logit", 1000)
+heritability_no_fixed_effect_fix = get.h2.from.qgparams(fit.inla.logit, "binom1.logit", 1000)
 cat("Time elapsed with rbind:", Sys.time()-t_before, "mins")
 t_before = Sys.time()
 
-
+{
+par(mfrow=c(1,2))
+truehist(transformed_heritability$h2.obs, xlab=expression(h[obs]^2), 
+         main="Averaging over fixed effects")
+truehist(heritability_no_fixed_effect_fix, xlab=expression(h[obs]^2),
+         main="No averaging")
+}
 
 ```
 
