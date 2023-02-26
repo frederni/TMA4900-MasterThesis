@@ -239,7 +239,6 @@ We define a general method for looking at the results of an INLA model.
 ```{r}
 ## This is a nice place to play around
 test = fit.inla.logit$marginals.linear.predictor
-lapply(test, mean)
 plot(test$Predictor.2) # 43x2 data for x and y...
 
 inla.posterior.marginal.latent.mode <- function(fit){
@@ -252,6 +251,32 @@ inla.posterior.marginal.latent.mode <- function(fit){
   }
   modes
 }
+marginal.latent.alternative <- function(fit, nsamples){
+  #' TODO : Work in progress!!
+  #' What if we sample.marginal `nsamples` samples for each predictor
+  #' Output is list(c(...), c(...), ..., c(...)) w/ nsamples list elems,
+  #' and 2000ish elements in each c() (the different predictor samples)
+  out_transpose = matrix(nrow=nsamples)
+  firstiter = T
+  cat("DEBUG: Entering sampling for loop\n")
+  for(predictor in names(fit$marginals.linear.predictor)){
+    xy = get(predictor, fit$marginals.linear.predictor)
+    predictor_samples = inla.rmarginal(nsamples, xy)
+    out_transpose = cbind(out_transpose, predictor_samples) # testing to see if this is culprit
+  }
+  # Need to slice off the first NA-column:
+  out_transpose = out_transpose[, 2:ncol(out_transpose)]
+  cat("DEBUG: Entering transposing loop\n")
+  # We want list where each list element is one sample, i.e. the transposed
+  # Start naive method, might be optimized:
+  out = list()
+  for(i in nsamples){
+    out$i = out_transpose[i, ]
+  }
+  out
+}
+# testing func:
+marginal.latent.alternative(fit.inla.logit, 100)
 
 report.max.skewness <- function(posterior){
   #' Made esepcially for marginal linear predictor but should work on any
@@ -312,6 +337,11 @@ analyze.inla.fit <- function(inla.fit){
 Below is a method used to obtain posterior distribution of the back-transformed heritability:
 
 ```{r}
+## Testing with dfs
+test = data.frame(va = c(1,2,3), vp = c(4,5,6))
+test$predict = list(c(7,8,9), c(10,11,12), c(13,14,15))
+# apply(test, 1, function(r) print(r) )
+
 get.h2 <- function(inla.fit, n, use.scale=F, model=NA){
   #' Get n samples of heritability from INLA fit
   #' h^2 computed as reciprocal of precision for id, over the sum of 
@@ -352,7 +382,6 @@ get.h2.from.qgparams <- function(inla.fit, modelname, n, n.obs=nrow(d.ped)){
   kwargs = list(verbose=F)
   # out = mapply(QGparams, mu, va.samples, vp.samples, modelname, MoreArgs = kwargs)
   h2.getter = function(...){
-    cat(...)
     get("h2.obs", suppressWarnings(QGparams(...)))
     }
   out = mapply(h2.getter, mu, va.samples, vp.samples, modelname, MoreArgs=kwargs)
@@ -372,15 +401,18 @@ new.h2.transf <- function(fit, modelname, nsamples){
   df <- data.frame(va = as.vector(1/posterior.samples[, "Precision for id"]),
                    vp = as.vector(vp.samples)
                    )
+  cat("Entering new func... ")
+  df$predict = marginal.latent.alternative(fit, nsamples)
+  cat("New func worked!")
   posterior = do.call("rbind", apply(df, 1, function(row){
-    QGparams(predict=marginal.mode, mu=debug_mu, var.a=row[["va"]], var.p=row[["vp"]],
+    QGparams(predict=row[["predict"]], var.a=row[["va"]], var.p=row[["vp"]],
              model=modelname, verbose=F)
   }))
   posterior
 }
 
 t_before = Sys.time()
-transformed_heritability = new.h2.transf(fit.inla.logit, "binom1.logit", 1000)
+transformed_heritability = new.h2.transf(fit.inla.logit, "binom1.logit", 100)
 heritability_no_fixed_effect_fix = get.h2.from.qgparams(fit.inla.logit, "binom1.logit", 1000)
 cat("Time elapsed with rbind:", Sys.time()-t_before, "mins")
 t_before = Sys.time()
