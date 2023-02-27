@@ -251,8 +251,9 @@ inla.posterior.marginal.latent.mode <- function(fit){
   }
   modes
 }
-marginal.latent.alternative <- function(fit, nsamples){
+marginal.latent.samples <- function(fit, nsamples){
   #' TODO : Work in progress!!
+  #' TODO : improve runtime, seems like inla.rmarginal takes the longest time.
   #' What if we sample.marginal `nsamples` samples for each predictor
   #' Output is list(c(...), c(...), ..., c(...)) w/ nsamples list elems,
   #' and 2000ish elements in each c() (the different predictor samples)
@@ -262,7 +263,7 @@ marginal.latent.alternative <- function(fit, nsamples){
   for(predictor in names(fit$marginals.linear.predictor)){
     xy = get(predictor, fit$marginals.linear.predictor)
     predictor_samples = inla.rmarginal(nsamples, xy)
-    out_transpose = cbind(out_transpose, predictor_samples) # testing to see if this is culprit
+    out_transpose = cbind(out_transpose, predictor_samples)
   }
   # Need to slice off the first NA-column:
   out_transpose = out_transpose[, 2:ncol(out_transpose)]
@@ -411,20 +412,35 @@ new.h2.transf <- function(fit, modelname, nsamples){
   posterior
 }
 
-t_before = Sys.time()
-transformed_heritability = new.h2.transf(fit.inla.logit, "binom1.logit", 100)
-heritability_no_fixed_effect_fix = get.h2.from.qgparams(fit.inla.logit, "binom1.logit", 1000)
-cat("Time elapsed with rbind:", Sys.time()-t_before, "mins")
-t_before = Sys.time()
+## analyze things ran on markov
+load("heritabilities_SSH_binom1.logit.Rdata")
+par(mfrow=c(2,2))
+truehist(heritability_averaged$h2.obs, main="Bayesian",
+         xlab=expression(h[obs]^2))
+truehist(heritability_frequentist_avged$h2.obs, main="Frequentist",
+         xlab=expression(h[obs]^2))
+truehist(heritability_notavged, main="No averaging",
+         xlab=expression(h[obs]^2))
+truehist(scaled.heritability, main="Direct scaling",
+         xlab=expression(h[obs]^2))
 
-{
-par(mfrow=c(1,2))
-truehist(transformed_heritability$h2.obs, xlab=expression(h[obs]^2), 
-         main="Averaging over fixed effects")
-truehist(heritability_no_fixed_effect_fix, xlab=expression(h[obs]^2),
-         main="No averaging")
-}
-
+#' Log (first run)
+# Called function at: Sun Feb 26 06:34:01 PM 2023
+# Entering `new.h2.transf` (Bayesian sampling)
+# Entering new func... DEBUG: Entering sampling for loop
+# DEBUG: Entering transposing loop
+# New func worked!Done after 1.895322 minutes. Entering same function without the Bayesian stuff.
+# Done after 1.875852 minutes. Now without averaging:Done after 8.269284 minutes.
+# Saving to disk...
+# [1] 0
+# Called function at: Sun Feb 26 10:20:25 PM 2023
+# Entering `new.h2.transf` (Bayesian sampling)
+# Entering new func... DEBUG: Entering sampling for loop
+# DEBUG: Entering transposing loop
+# New func worked!Done after 4.210027 minutes. Entering same function without the Bayesian stuff.
+# Done after 6.657132 minutes. Now without averaging:Done after 3.654567 minutes.
+# Saving to disk...
+# [1] 0
 ```
 
 We extend the contents of the INLA fit to include heritabilities on the different scales
@@ -592,10 +608,10 @@ simulated.heritability <- function(NeNc=0.5, idgen=100, nGen = 9, sigmaA=0.4,
   
   # using the function rbv from MCMCglmm
   # fix the additive variance value, here is 0.4 but it can be any value
-  sigmaA <- 0.4
   pedigree <- ped0[ ,1:3]
   # The following will CRASH if you don't use the patched MCMCglmm package!
   u <- rbv(pedigree, sigmaA) # Breeding values for each individual
+  cat(u[1])
   
   simulated.d.ped <- nadiv::prepPed(pedigree)
   simulated.Cmatrix <- nadiv::makeAinv(simulated.d.ped)$Ainv 
@@ -640,10 +656,49 @@ simulated.formula = simulated.response ~ -1 + # a_i (and residuals) only
       prec=list(initial=log(1/10), prior="pc.prec",param=c(1,0.05)) # PC priors
     ))
 
-simulation_results = simulated.heritability(linear.predictor = function(u) u+rnorm(length(u)),
-                       simulated.formula = simulated.formula)
+simulation.hyperparameters <- function(NeNc_list=0.1, sigmaA_list=0.4){
+  p = list()
+  if(length(NeNc_list) > 1){
+    cat("Running simulations for NeNc values, sigmaA is fixed at", sigmaA_list[1])
+    for(NeNc in NeNc_list){
+      simulation_results = simulated.heritability(
+      NeNc=NeNc, idgen= 100, nGen = 10, sigmaA = sigmaA_list,
+      linear.predictor = function(u) u+rnorm(length(u)),
+      simulated.formula = simulated.formula
+      )
+      p[[paste0(NeNc)]] = simulation_results$heritability
+    }
+  }
+  else{
+    cat("Simulations for sigmaA, NeNc is fixed at", NeNc_list[1])
+    for(sigmaA in sigmaA_list){
+      cat("(",sigmaA,"),")
+      simulation_results = simulated.heritability(
+      NeNc=NeNc_list, idgen= 100, nGen = 10, sigmaA = sigmaA,
+      linear.predictor = function(u) u+rnorm(length(u)),
+      simulated.formula = simulated.formula
+      )
+      p[[paste0(sigmaA)]] = simulation_results$heritability
+    }
+  }
+  return(p)
+}
 
-truehist(simulation_results$heritability)
+p = simulation.hyperparameters(NeNc_list = c(0.05, 0.1, 0.25, 0.5))
+p2 = simulation.hyperparameters(sigmaA_list=c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75)*100)
+
+par(mfrow=c(2,2))
+for(i in names(p)){
+  truehist(get(i,p), xlab=paste("NeNc =",i))
+  abline(v=0.4)
+}
+par(mfrow=c(3,2))
+for(i in names(p2)){
+  truehist(get(i,p2), xlab = paste("sigmaA =", i))
+  cat("True h2", as.numeric(i)/(as.numeric(i)+1), "\n")
+  # abline(v=i/(as.numeric(i)+1)) # a+e_i, e_i~N
+}
+
 
 #' * Fix number individuals and Ne/Nc
 #' * For different sigmaA (0.01, 0.05, 0.1, 0.25, 0.5, 0.75)
