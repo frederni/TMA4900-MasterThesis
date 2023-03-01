@@ -23,6 +23,7 @@ library(INLA)
 library(QGglmm)
 # library(SMisc)
 library(ggplot2)
+library(latex2exp)
 if (!require("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
 if (!require("GeneticsPed", quietly = TRUE))
@@ -104,6 +105,7 @@ qg.data.gg.inds$u <- 1:nrow(qg.data.gg.inds)
 The general INLA formula is provided below, where `f()` encode the random effect:
 
 ```{r}
+FORMULA_EXTRA_IID_NOISE = FALSE # Change this to include iid N(0,1) noise
 
 formula.inla.scaled = surv.ind.to.ad ~ f.coef.sc + g1.sc + natalyr.no.sc + brood.date.sc + sex +
   f(nestrec, model="iid",hyper=list(
@@ -117,12 +119,14 @@ formula.inla.scaled = surv.ind.to.ad ~ f.coef.sc + g1.sc + natalyr.no.sc + brood
     constr = F, # Doesn't really matter
     hyper=list(
       prec=list(initial=log(1/10), prior="pc.prec",param=c(1,0.05)) # PC priors
-     ))  # + # this last part is only needed if the u~N(0,1) residuals are included
-# f(u, model="iid",
-#   constr=TRUE,
-#   hyper=list(
-#     prec=list(initial=log(1), fixed=TRUE) # Fixed variance to 1
-#   )) # This last component adds the independent residuals with variance 1;
+     )) +
+  ifelse(FORMULA_EXTRA_IID_NOISE,
+         f(u, model="iid", constr=T, hyper=list(prec=list(
+           initial=log(1),
+           fixed=T))
+           ),
+         0
+         )
 ```
 
 Now we call INLA models, this is the slowest part:
@@ -148,10 +152,9 @@ fit.inla.gaussian = inla(formula=formula.inla.scaled, family="gaussian",
 )
 ```
 
-A quick rundown of the `control` parameters we need. For the binomial models, we want to be able to use `QGglmm` and average over all fixed effects. This is done by supplying the *latent marginal predicted values*, which are not computed unless you pass the `control.compute` argument in the call, with this maringals predictor thing. We also want to compute CPO in the Gaussian model so we can look a bit at its "residuals" (PIT values). The last ones are:
+A quick rundown of the `control` parameters we need. For the binomial models, we want to be able to use `QGglmm` and average over all fixed effects. This is done by supplying the *latent marginal predicted values*, which are not computed unless you pass the `control.compute` argument in the call, with the *return.marginals.predictor* flag set to true. We also want to compute CPO in the Gaussian model so we can look a bit at its "residuals" (PIT values). DIC (Deviance information criterion) is also specified here. The last ones are:
 
 * `control.family` provides link function
-* `control.compute` with dic computes deviance information criteria which can be compared for the different models.
 
 
 ## Residual analyses on Gaussian model
@@ -576,59 +579,60 @@ print_metrics(4)
 
 ```{r}
 
-
-# set a value for the Ne/Nc ratio
-# here is 0.5 but it can be set to 0.15 or 0.05
-#Ne : Effective population size
-#'    determines the rates of genetic drift, loss of neutral genetic diversity
-#'    and increase in inbreeding experienced by a population.
-#Nc : Census population size
-#'    affects the degree of demographic stochasticity,
-#'    and is used to assess threat status.
-#'    See [here](
-#'    https://onlinelibrary.wiley.com/doi/full/10.1111/j.1095-8649.2011.03124.x
-#'    )
-#'    and [here](
-#'    https://onlinelibrary.wiley.com/doi/full/10.1111/j.1095-8649.2011.03124.x
-#'    )
-#'    
-
 simulated.heritability <- function(NeNc=0.5, idgen=100, nGen = 9, sigmaA=0.4,
                                    linear.predictor=NA, simulated.formula=NA){
-  # Remark: linear.predictor should be a callable and pass (at least) u
-  # generate the pedigree using the function generatePedigree from GeneticsPed
-  # nFather and nMother are the number of fathers and mothers per generation
-  # they are generated according to the selected Ne/Nc ratio
+  #' Generate pedigree, fit gaussian (INLA) model and 
+  #' Remark: linear.predictor should be a callable and pass (at least) u
+  #' 
+  #' Input:
+  #' NeNc:    Effective/Census population mean, used to determine
+  #'          Number of fathers and mothers per generation,
+  #' idgen:   Numer of individuals per generation in pedigree
+  #' nGen:    Number of generations in pedigree
+  #' sigmaA:  Additive genetic variance (to get breeding values)
+  #' 
+  #' linear.predictor:  Callable function of 'u' (breeding values),
+  #'                    Should be centered around 0
+  #' simulated.formula: Formula expression using the response name
+  #'                    `simulated.response`, param `id` and `Cmatrix`,
+  #'                    all of which are defined locally in this method.
+  #' Output:
+  #' heritability:  Posterior latent heritability samples (no transformation)
+  #' summary:       List of mean and quantiles of posterior heritability
+  #' p:             Portion of TRUE observations in simulated response
+  
   ped0 <- generatePedigree(nId = idgen, nGeneration = nGen, 
                            nFather = idgen * NeNc, nMother = idgen * NeNc)
-  # set correct format for pedigree
+  # Set correct format for pedigree
   pedigree <- ped0[ , c(1,3,2)]
   names(pedigree) <- c("id", "dam", "sire")
-  # generate breeding values (always constant)
-  
-  # using the function rbv from MCMCglmm
-  # fix the additive variance value, here is 0.4 but it can be any value
   pedigree <- ped0[ ,1:3]
+  
+  # Generate random breeding values
   # The following will CRASH if you don't use the patched MCMCglmm package!
-  u <- rbv(pedigree, sigmaA) # Breeding values for each individual
-  cat(u[1])
+  u <- rbv(pedigree, sigmaA)
   
   simulated.d.ped <- nadiv::prepPed(pedigree)
   simulated.Cmatrix <- nadiv::makeAinv(simulated.d.ped)$Ainv 
   
   # Generating "true" y_i
-  sigmoid.scale <- function(x) exp(x)/(exp(x)+1)
-  simulated.response <- rbinom(length(u), size=1,
-                               prob=sigmoid.scale(linear.predictor(u)))
+  
+  # sigmoid.scale <- function(x) exp(x)/(exp(x)+1)
+  # simulated.response <- rbinom(length(u), size=1,
+  #                              prob=sigmoid.scale(linear.predictor(u)))
+  
+  # This assumes mean of \eta_i is 0
+  simulated.response <- ifelse(linear.predictor(u) <= 0, 0, 1)
+  p = mean(simulated.response) # portion of true responses
   
   # Model fitting LMM for binary trait
-  # trying to re-load formula in the context of local variables
+  # First reload formula environment to access local variables
   environment(simulated.formula) <- environment()
   simulated.fit.inla = inla(formula=simulated.formula, family="gaussian",
                              data=simulated.d.ped,
                              control.compute=list(dic=T)
                             )
-  # (debug) checking that INLA was able to fit model
+  # Checks for error status in INLA fit,
   stopifnot(simulated.fit.inla$mode$mode.status == 0) # status != 0 is trouble
   
   heritability = get.h2(simulated.fit.inla, 10000) #10k samples should be suff
@@ -636,7 +640,8 @@ simulated.heritability <- function(NeNc=0.5, idgen=100, nGen = 9, sigmaA=0.4,
     heritability=heritability,
     summary=list(
       mean=mean(heritability), standard.deviation=sd(heritability),
-       quantiles=quantile(heritability, probs=c(0.05, 0.5, 0.95)))
+       quantiles=quantile(heritability, probs=c(0.025, 0.5, 0.975))),
+    p=p
   )
 }
 
@@ -648,13 +653,63 @@ Now we try to run it through the model pipeline:
 
 ```{r}
 
-simulated.formula = simulated.response ~ -1 + # a_i (and residuals) only
-  f(id,model="generic0",
+simulated.formula = simulated.response ~ f(id,model="generic0",
     Cmatrix=simulated.Cmatrix,
     constr = F, # Shouldn't matter
     hyper=list(
       prec=list(initial=log(1/10), prior="pc.prec",param=c(1,0.05)) # PC priors
     ))
+
+result = simulated.heritability(linear.predictor=function(u) u+rnorm(length(u)),
+                       simulated.formula=simulated.formula, sigmaA=0.1)
+
+threshold.scaling.param <- function(p) p*(1-p)/(dnorm(qnorm(p)))^2
+threshold.scaled.h2 <- 1/threshold.scaling.param(result$p) * result$heritability
+simulation.h2.true <- 10/(10+1) # Based on linear predictor, e.g. sigmaA/(sigmaA+1)
+data.frame(True=simulation.h2.true,
+           Mean.Threshold.scale = mean(threshold.scaled.h2),
+           Confidence.Interval = paste0("(",
+                            paste(
+                              format(
+                                quantile(threshold.scaled.h2,
+                                         probs=c(0.025,0.975)),
+                                digits=4),
+                              collapse=", "),
+                            ")"
+                            ),
+           Latent.Mean = mean(result$summary$mean)
+           )
+
+### It doesn't seem like it works so well for larger sigmaA's. Let's quantitatively look into deviation:
+plot.h2.deviation <- function(){
+  sigmaA.list <- c(1:10 %o% 10^(-3:3)) # Log scale between 10^-3 to 10^3
+  deviation = c()
+  estimates = c()
+  true.vals = c()
+  for(sigmaA in sigmaA.list){
+    cat(">")
+    result = simulated.heritability(
+      linear.predictor=function(u) u+rnorm(length(u)),
+      simulated.formula=simulated.formula, sigmaA=sigmaA)
+    threshold.scaled.h2 <- 1/threshold.scaling.param(result$p) * result$heritability
+    simulation.h2.true <- sigmaA/(sigmaA+1) # Based on linear predictor, e.g. sigmaA/(sigmaA+1)
+    true.vals = c(true.vals, simulation.h2.true)
+    estimates = c(estimates, mean(threshold.scaled.h2))
+    deviation = c(deviation, simulation.h2.true-mean(threshold.scaled.h2))
+  }
+  data.frame(estimates=estimates, deviation=deviation,
+             true.vals=true.vals, sigmaA=sigmaA.list)
+}
+res = plot.h2.deviation()
+ggplot(data=res, aes(x=sigmaA)) +
+  geom_line(aes(y=true.vals,color="True h^2")) +
+  geom_line(aes(y=estimates, color="Fitted h^2")) +
+  xlab(TeX("$\\sigma^2$")) + ylab(TeX("$h^2$")) + 
+  scale_x_continuous(trans='log10') +
+  scale_color_manual(name="True versus fitted heritability",
+    breaks=c("True h^2", "Fitted h^2"),
+    values = c("True h^2"='darkred', "Fitted h^2"='steelblue')
+    )
 
 simulation.hyperparameters <- function(NeNc_list=0.1, sigmaA_list=0.4){
   p = list()
@@ -699,11 +754,4 @@ for(i in names(p2)){
   # abline(v=i/(as.numeric(i)+1)) # a+e_i, e_i~N
 }
 
-
-#' * Fix number individuals and Ne/Nc
-#' * For different sigmaA (0.01, 0.05, 0.1, 0.25, 0.5, 0.75)
-#' * Fit INLA model
-#' * Compute h2
-#' * Report on computed h2 (posterior mean) and true h2
-#' * Try fixed sigmaA and varying Ne/Nc
 ```
