@@ -143,11 +143,9 @@ fit.inla.gaussian = inla(formula=formula.inla.scaled, family="gaussian",
 For the Gaussian INLA model we also compute PIT (probability integral transform) values. They resemble the probability that a new response is less than the observed response. Under Gaussian model assumptions, PIT values should be uniformly distributed. [Source](https://julianfaraway.github.io/brinla/examples/chicago.html).
 
 
-The first plot obviously shows a non-linear trend but rather a sigmoid-like curve. This is interesting!
-
-The second plot shows the fitted values as a function of PIT. Not sure how it should look like, but definitely not like this!
-
-The third plot is the posterior means of the linear predictor for the Gaussian fit versus the same value for the probit model. If we compare logit to probit we see pretty close to a one-to-one correspondance. This is completely violated when comparing the Gaussian one to the two other models.
+* The first plot are the sorted PIT values over quantiles, analogous to a Q-Q plot in frequentist data. It shows a clear non-linear trend but rather a sigmoid-like curve.
+* The second plot shows the PIT values across the different posterior fitted value means. Here we expect no clear pattern for well-behaved models, which is not the case in our model.
+* The third plot is the residuals $y_i - \hat{y_i}$ with 95% credible interval. Here, we see a clear separation of those
 
 ```{r gaussian plotting}
 # TODO with these plots: Make them to ggplots instead so it's the same style (aesthethic) for all plots...
@@ -165,7 +163,9 @@ ggplot(data=data.frame(
 # --------    analagous to "Residuals vs fitted"
 ggplot(cbind(fit.inla.gaussian$summary.fitted.values, pit.g),
        aes(x=mean, y=pit.g)) +
-  geom_point() + labs(title="PIT values over posterior mean fitted values",
+  geom_point() +
+  geom_smooth() +
+  labs(title="PIT values over posterior mean fitted values",
                       x="Posterior fitted values (mean)",
                       y="PIT value")
 
@@ -194,22 +194,17 @@ plot.inla.linear.predictors <- function(){
 
 
 # <Plot 4> Plot of 'residuals', i.e. difference in true data and the 
-# --------    50% quantile of the fitted values
-
-# Compute residuals from the 50% quantile of fitted values
-# Scale residuals by multiplying the square of the precisions? Currently: no scaling
+# --------    mean of the fitted values
 n.obs = length(qg.data.gg.inds$u)
 resids = qg.data.gg.inds$surv.ind.to.ad -
   fit.inla.gaussian$summary.fitted.values$`mean`
-par(mfrow=c(1,1))
-plot(resids, main="Residuals of Gaussian model", ylab="")
-df.resid = qg.data.gg.inds$surv.ind.to.ad-fit.inla.gaussian$summary.fitted.values
-rownames(df.resid) = 1:nrow(df.resid)
-ggplot(data=df.resid, aes(x=as.numeric(row.names(df.resid)), y=mean)) +
-  geom_errorbar(aes(ymin=`0.025quant`, ymax=`0.975quant`, color="95% credible interval")) +
-  geom_point(aes(color="Mean residuals")) + labs(title="Residuals of Gaussian model", x="Index", y="Residuals") +
-  scale_color_manual(name="", breaks=c("95% credible interval", "Mean residuals"), 
-                     values=c("95% credible interval"='darkgrey', "Mean residuals"='darkred'))
+df.resid$class = qg.data.gg.inds$surv.ind.to.ad
+
+ggplot(data=df.resid, aes(x=as.numeric(row.names(df.resid)), y=mean, color=factor(class))) +
+  geom_errorbar(aes(ymin=`0.025quant`, ymax=`0.975quant`), color="darkgrey") +
+  geom_point() + scale_color_manual(name="Juvenile survival", values=c("darkred", "steelblue")) +
+  labs(title="Residuals of Gaussian model", x="Index", y="Residuals")
+
 
 # <Plot 5> Recreation of QQ plot using residuals computed above instead of PIT values
 #           Unused
@@ -221,16 +216,6 @@ qqplot(qnorm(ppoints(n.obs),
        resids, xlab="Theoretical quantiles", ylab="Sample Quantiles",
        main="Q-Q plot from 'residuals' above")  
 }
-
-
-# <From that thing>
-ggplot(data.frame(
-  Fittedvalues = fit.inla.gaussian$summary.fitted.values$mean,
-  Residuals = resids),
-  aes(x=Fittedvalues, y=Residuals)) +
-  geom_point() + geom_smooth(se=T) +
-  labs(x="Fitted values", title="Violation of linearity assumtption")
-
 
 ```
 
