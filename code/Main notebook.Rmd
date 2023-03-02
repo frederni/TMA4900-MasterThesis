@@ -43,62 +43,46 @@ qg.data.gg.inds$natalyr.id <- qg.data.gg.inds$natalyr.no
 
 ```
 
-Scaling continuous variances can be more stable: (I think?)
+Below we do a couple more preprocessing steps
 
 ```{r}
+# Scale the continuous variances for stability
 qg.data.gg.inds$f.coef.sc <- scale(qg.data.gg.inds$f.coef,scale=FALSE)
 qg.data.gg.inds$g1.sc <- scale(qg.data.gg.inds$g1,scale=FALSE)
 qg.data.gg.inds$natalyr.no.sc <- scale(qg.data.gg.inds$natalyr.no,scale=FALSE)
 qg.data.gg.inds$brood.date.sc <- scale(qg.data.gg.inds$brood.date,scale=FALSE)
-```
 
-The sex covariate is either `1` or `2`, so we binarize this covariate:
-
-```{r}
+# Binarize `sex` covariate
 qg.data.gg.inds$sex <- qg.data.gg.inds$sex.use.x1 - 1 
 ```
 
 ## Deriving *A*
 
-In order to derive the A matrix, we need to work a bit
+For INLA we need ids that run from 1 to the number of individuals
 
 ```{r}
 d.ped <- nadiv::prepPed(d.ped)
-```
-
-In particular, for INLA we need ids that run from 1 to the number of individuals
-
-```{r}
 d.ped$id <- 1:(nrow(d.ped))
-```
 
-Need a map file to keep track of the ids
-
-```{r}
+# Maps to keep track of the Ninecode to ID relations
 d.map <- d.ped[,c("ninecode","id")]
 d.map$g1 <- d.Q[match(d.map$ninecode,d.Q$ninecode),"g1"]
 d.map$foc0 <- d.Q[match(d.map$ninecode,d.Q$ninecode),"foc0"]
-```
 
-Give mother and father the id
-
-```{r}
+# Give mother and father the id
 d.ped$mother.id <- d.map[match(d.ped$gendam, d.map$ninecode),"id"]
 d.ped$father.id <- d.map[match(d.ped$gensire, d.map$ninecode),"id"]
-```
 
-Make the inverse A matrix using the `nadiv` package:
-
-```{r}
+# A can finally be constructed using `nadiv`
 Cmatrix <- nadiv::makeAinv(d.ped[,c("id","mother.id","father.id")])$Ainv
-```
 
-Store the id twice: Once for the breeding value, and once for the independent residuals u with variance 1 (the latter are not going to be included in the end, but we checked what happened when they were there)
+# Stores ID twice (to allow for extra IID random effect)
 
-```{r}
 qg.data.gg.inds$id <- d.map[match(qg.data.gg.inds$ninecode, d.map$ninecode), "id"]
-qg.data.gg.inds$u <- 1:nrow(qg.data.gg.inds)
+qg.data.gg.inds$u <- 1:nrow(qg.data.gg.inds) # Extra IID effect
+
 ```
+
 
 # INLA
 
@@ -129,7 +113,7 @@ formula.inla.scaled = surv.ind.to.ad ~ f.coef.sc + g1.sc + natalyr.no.sc + brood
          )
 ```
 
-Now we call INLA models, this is the slowest part:
+Now we call INLA models (this takes some time). Note that we pass some control arguments to the function call. We compute DIC (Deviance information criterion) for all models with `dic` flag in `control.compute`.  For the binomial models, we want to be able to use `QGglmm` and average over all fixed effects. This is done by supplying the *latent marginal predicted values*, which are not computed unless you pass the `return.marginals.predictor` flag set to true. We also want to set the `CPO` flag to true in the Gaussian model, so we can look a bit at its "residuals" (PIT values). Lastly, the `control.family` argument is used to pass the link functions for binomial models.
 
 ```{r}
 
@@ -143,7 +127,6 @@ fit.inla.logit = inla(formula=formula.inla.scaled, family="binomial",
                       data=qg.data.gg.inds,
                       control.compute=list(dic=T, return.marginals.predictor=T),
                       control.family = list(link = "logit"),
-                      control.predictor = list(compute=T)
 )
 
 fit.inla.gaussian = inla(formula=formula.inla.scaled, family="gaussian",
@@ -152,14 +135,13 @@ fit.inla.gaussian = inla(formula=formula.inla.scaled, family="gaussian",
 )
 ```
 
-A quick rundown of the `control` parameters we need. For the binomial models, we want to be able to use `QGglmm` and average over all fixed effects. This is done by supplying the *latent marginal predicted values*, which are not computed unless you pass the `control.compute` argument in the call, with the *return.marginals.predictor* flag set to true. We also want to compute CPO in the Gaussian model so we can look a bit at its "residuals" (PIT values). DIC (Deviance information criterion) is also specified here. The last ones are:
 
-* `control.family` provides link function
 
 
 ## Residual analyses on Gaussian model
 
-For the Gaussian INLA model we also compute PIT. From example (don't copy this!) "The PIT is the probability of a new response less than the observed response using a model based on the rest of the data. We'd expect the PIT values to be uniformly distributed if the model assumptions are correct." [From here](https://julianfaraway.github.io/brinla/examples/chicago.html).
+For the Gaussian INLA model we also compute PIT (probability integral transform) values. They resemble the probability that a new response is less than the observed response. Under Gaussian model assumptions, PIT values should be uniformly distributed. [Source](https://julianfaraway.github.io/brinla/examples/chicago.html).
+
 
 The first plot obviously shows a non-linear trend but rather a sigmoid-like curve. This is interesting!
 
