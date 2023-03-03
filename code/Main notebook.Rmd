@@ -103,14 +103,16 @@ formula.inla.scaled = surv.ind.to.ad ~ f.coef.sc + g1.sc + natalyr.no.sc + brood
     constr = F, # Doesn't really matter
     hyper=list(
       prec=list(initial=log(1/10), prior="pc.prec",param=c(1,0.05)) # PC priors
-     )) +
-  ifelse(FORMULA_EXTRA_IID_NOISE,
-         f(u, model="iid", constr=T, hyper=list(prec=list(
-           initial=log(1),
-           fixed=T))
-           ),
-         0
-         )
+     )) 
+if(FORMULA_EXTRA_IID_NOISE){
+  formula.inla.scaled = update(formula.inla.scaled,
+                               ~ . + f(u, model="iid", constr=T,
+                                       hyper=list(prec=list(
+                                         initial=log(1),
+                                         fixed=T))
+                                       )
+                               )
+}
 ```
 
 Now we call INLA models (this takes some time). Note that we pass some control arguments to the function call. We compute DIC (Deviance information criterion) for all models with `dic` flag in `control.compute`.  For the binomial models, we want to be able to use `QGglmm` and average over all fixed effects. This is done by supplying the *latent marginal predicted values*, which are not computed unless you pass the `return.marginals.predictor` flag set to true. We also want to set the `CPO` flag to true in the Gaussian model, so we can look a bit at its "residuals" (PIT values). Lastly, the `control.family` argument is used to pass the link functions for binomial models.
@@ -148,10 +150,8 @@ For the Gaussian INLA model we also compute PIT (probability integral transform)
 * The third plot is the residuals $y_i - \hat{y_i}$ with 95% credible interval. Here, we see a clear separation of those
 
 ```{r gaussian plotting}
-# TODO with these plots: Make them to ggplots instead so it's the same style (aesthethic) for all plots...
 
-# Residual analysis on Gaussian INLA object:)
-pit.g = fit.inla.gaussian$cpo$pit
+pit.g = fit.inla.gaussian$cpo$pit # PIT-values
 
 # <Plot 1> Analogous to QQ-plot so should be linear
 # --------
@@ -195,9 +195,10 @@ plot.inla.linear.predictors <- function(){
 
 # <Plot 4> Plot of 'residuals', i.e. difference in true data and the 
 # --------    mean of the fitted values
-n.obs = length(qg.data.gg.inds$u)
-resids = qg.data.gg.inds$surv.ind.to.ad -
-  fit.inla.gaussian$summary.fitted.values$`mean`
+
+df.resid = qg.data.gg.inds$surv.ind.to.ad - 
+  fit.inla.gaussian$summary.fitted.values
+rownames(df.resid) = 1:nrow(df.resid)
 df.resid$class = qg.data.gg.inds$surv.ind.to.ad
 
 ggplot(data=df.resid, aes(x=as.numeric(row.names(df.resid)), y=mean, color=factor(class))) +
@@ -209,6 +210,7 @@ ggplot(data=df.resid, aes(x=as.numeric(row.names(df.resid)), y=mean, color=facto
 # <Plot 5> Recreation of QQ plot using residuals computed above instead of PIT values
 #           Unused
 plot.inla.qqplot <- function(){
+  n.obs = length(qg.data.gg.inds$u)
 qqplot(qnorm(ppoints(n.obs),
              mean = mean(qg.data.gg.inds$surv.ind.to.ad),
              sd = sd(qg.data.gg.inds$surv.ind.to.ad)
@@ -227,6 +229,7 @@ test = fit.inla.logit$marginals.linear.predictor
 plot(test$Predictor.2) # 43x2 data for x and y...
 
 inla.posterior.marginal.latent.mode <- function(fit){
+  #' Get mode for each marginal linear predictor
   modes = c()
   iter = 1
   for(predictor in names(fit$marginals.linear.predictor)){
@@ -237,13 +240,12 @@ inla.posterior.marginal.latent.mode <- function(fit){
   modes
 }
 marginal.latent.samples <- function(fit, nsamples){
-  #' TODO : Work in progress!!
-  #' TODO : improve runtime, seems like inla.rmarginal takes the longest time.
-  #' What if we sample.marginal `nsamples` samples for each predictor
-  #' Output is list(c(...), c(...), ..., c(...)) w/ nsamples list elems,
-  #' and 2000ish elements in each c() (the different predictor samples)
+  #' TODO : profvis this
+  #' Rather than only using mode for each predictor, we use samples
+  #' from its posterior, with _nsamples_ samples. 
+  #' Output is list of _nsamples_ elements, with each element in the list being
+  #' a vector of the predictor size (i.e. number of observations in data)
   out_transpose = matrix(nrow=nsamples)
-  firstiter = T
   cat("DEBUG: Entering sampling for loop\n")
   for(predictor in names(fit$marginals.linear.predictor)){
     xy = get(predictor, fit$marginals.linear.predictor)
