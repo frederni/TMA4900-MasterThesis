@@ -220,13 +220,11 @@ qqplot(qnorm(ppoints(n.obs),
 }
 
 ```
+## Transformations of heritability
 
-We define a general method for looking at the results of an INLA model.
+Before developing methods for transformed heritability, we need to be able to sample from the marginal fitted values on latent scale.
 
 ```{r}
-## This is a nice place to play around
-test = fit.inla.logit$marginals.linear.predictor
-plot(test$Predictor.2) # 43x2 data for x and y...
 
 inla.posterior.marginal.latent.mode <- function(fit){
   #' Get mode for each marginal linear predictor
@@ -239,32 +237,28 @@ inla.posterior.marginal.latent.mode <- function(fit){
   }
   modes
 }
+
+
 marginal.latent.samples <- function(fit, nsamples){
-  #' TODO : profvis this
   #' Rather than only using mode for each predictor, we use samples
   #' from its posterior, with _nsamples_ samples. 
   #' Output is list of _nsamples_ elements, with each element in the list being
   #' a vector of the predictor size (i.e. number of observations in data)
-  out_transpose = matrix(nrow=nsamples)
-  cat("DEBUG: Entering sampling for loop\n")
-  for(predictor in names(fit$marginals.linear.predictor)){
-    xy = get(predictor, fit$marginals.linear.predictor)
-    predictor_samples = inla.rmarginal(nsamples, xy)
-    out_transpose = cbind(out_transpose, predictor_samples)
+  out_transpose = matrix(nrow=nsamples,
+                         ncol=length(fit$marginals.linear.predictor))
+  for(i in seq_along(fit$marginals.linear.predictor)){
+    xy = get(names(fit$marginals.linear.predictor)[i], fit$marginals.linear.predictor)
+    out_transpose[, i] = inla.rmarginal(nsamples, xy)
   }
-  # Need to slice off the first NA-column:
-  out_transpose = out_transpose[, 2:ncol(out_transpose)]
-  cat("DEBUG: Entering transposing loop\n")
+
   # We want list where each list element is one sample, i.e. the transposed
-  # Start naive method, might be optimized:
   out = list()
-  for(i in nsamples){
-    out$i = out_transpose[i, ]
+  for(i in 1:nsamples){
+    out[[i]] = out_transpose[i, ]
   }
   out
 }
-# testing func:
-marginal.latent.alternative(fit.inla.logit, 100)
+
 
 report.max.skewness <- function(posterior){
   #' Made esepcially for marginal linear predictor but should work on any
@@ -281,59 +275,20 @@ report.max.skewness <- function(posterior){
       "with skewness", max(posterior_skews), ".\n")
 }
 
-report.max.skewness(test)
-plot(test$Predictor.321)
-
-
-analyze.inla.fit <- function(inla.fit){
-  # Collecting diagnostic functions in this method:-)
-  #' Check if there is a problem (ok of =0) and dic
-  print(paste(inla.fit$mode$mode.status,
-  inla.fit$dic$dic))
-  
-  print(summary(inla.fit))
-  
-  #inla.fit$summary.hyperpar,
-  #inla.fit$summary.fixed,
-  
-  #inla_mmarginal(inla.fit),
-  #inla_emarginal(inla.fit)
-  #))
-  
-  #' Plotting the posterior marginals for the variances; This is a bit cumbersome,
-  #' because INLA works with precisions, so we need a transformation. 
-  #' The code below does it for us:
-  par(mfrow=c(1,3))
-  
-  plot(inla.tmarginal(
-    function(x) 1/x,inla.fit$marginals.hyperpar$`Precision for nestrec`),
-    type="l",main = "next")
-  
-  plot(inla.tmarginal(
-    function(x) 1/x,inla.fit$marginals.hyperpar$`Precision for natalyr.id`),
-    type="l",main="natalyr")
-  
-  plot(inla.tmarginal(
-    function(x) 1/x,inla.fit$marginals.hyperpar$`Precision for id`),
-    type="l",main="animal")
-}
-
-# analyze.inla.fit(fit.inla.probit)
 
 ```
 
-Below is a method used to obtain posterior distribution of the back-transformed heritability:
+We can now define methods to obtain heritability on the different scales
 
 ```{r}
-## Testing with dfs
-test = data.frame(va = c(1,2,3), vp = c(4,5,6))
-test$predict = list(c(7,8,9), c(10,11,12), c(13,14,15))
-# apply(test, 1, function(r) print(r) )
 
 get.h2 <- function(inla.fit, n, use.scale=F, model=NA){
   #' Get n samples of heritability from INLA fit
   #' h^2 computed as reciprocal of precision for id, over the sum of 
-  #' (the reciprocal of) all random effects / hyperparameters 
+  #' (the reciprocal of) all random effects / hyperparameters precisions
+  #' Input: INLA object, number of samples, scaling flag and model parameter.
+  #' Scaling flag determines if we want latent h^2 (F) or observation-scale,
+  #' including the link variance in the binomial models.
   samples <- inla.hyperpar.sample(n=n,inla.fit)
   denominator = 0
   for(cname in colnames(samples)){ denominator = denominator + 1/samples[, cname]}
@@ -349,31 +304,48 @@ get.h2 <- function(inla.fit, n, use.scale=F, model=NA){
   return(h2.inla)
 }
 
-get.h2.from.qgparams <- function(inla.fit, modelname, n, n.obs=nrow(d.ped)){
+get.h2.from.qgparams <- function(inla.fit, modelname, n, averaging=F){
   #' Computes a posterior of data-scale heritability (h2) using QGParams
-  #'  
+  #'
   #' Params:
-  #' inla.fit    the fitted INLA object
-  #' modelname  a string specifying model
+  #' inla.fit:  The fitted INLA object
+  #' modelname: A string specifying model
   #'    ("Gaussian", "binomN1.probit", "binom1.logit")
-  #' n.obs      keyword argument if binomial model is has N != 1 trials
-  #'    NB: Should explicitly be set to NULL if not relevant (Gaussian model)
-  #'    Currently not in use as we're always dealing with binary (1 trial)
+  #' n:         Number of samples  
+  #' averaging: Flag to determine if we want to average or nah
   stopifnot(modelname %in% c("Gaussian", "binom1.probit", "binom1.logit"))
   samples.posterior <- inla.hyperpar.sample(n=n,inla.fit)
   vp.samples = 0
   for(cname in colnames(samples.posterior)){
     vp.samples = vp.samples + 1/samples.posterior[, cname]
-    }
-  mu = inla.fit$summary.fixed$mean[1]
-  va.samples = 1/samples.posterior[,"Precision for id"]
-  kwargs = list(verbose=F)
-  # out = mapply(QGparams, mu, va.samples, vp.samples, modelname, MoreArgs = kwargs)
-  h2.getter = function(...){
-    get("h2.obs", suppressWarnings(QGparams(...)))
-    }
-  out = mapply(h2.getter, mu, va.samples, vp.samples, modelname, MoreArgs=kwargs)
-  return(out)
+  }
+  
+  if(! averaging){
+    mu = inla.fit$summary.fixed$mean[1] # Intercept
+    va.samples = 1/samples.posterior[,"Precision for id"]
+    kwargs = list(verbose=F)
+  
+    h2.getter = function(...){
+      get("h2.obs", suppressWarnings(QGparams(...)))
+      }
+    out = mapply(h2.getter, mu, va.samples, vp.samples, modelname, MoreArgs=kwargs)
+    return(out)
+  }
+  else{
+    # Average over fixed effects
+    debug_mu = fit$summary.fixed$mean[1]
+    vp.samples = 0
+    df <- data.frame(va = as.vector(1/posterior.samples[, "Precision for id"]),
+                     vp = as.vector(vp.samples)
+                     )
+    df$predict = marginal.latent.alternative(fit, nsamples)
+    posterior = do.call("rbind", apply(df, 1, function(row){
+      QGparams(predict=row[["predict"]], var.a=row[["va"]], var.p=row[["vp"]],
+               model=modelname, verbose=F)
+    }))
+    posterior    
+  }
+
 }
 
 
@@ -381,22 +353,7 @@ new.h2.transf <- function(fit, modelname, nsamples){
   # This is very much WIP but works I think now
   posterior.samples = inla.hyperpar.sample(nsamples, fit)
   marginal.mode = inla.posterior.marginal.latent.mode(fit)
-  debug_mu = fit$summary.fixed$mean[1]
-  vp.samples = 0
-  for(cname in colnames(posterior.samples)){
-    vp.samples = vp.samples + 1/posterior.samples[, cname]
-    }
-  df <- data.frame(va = as.vector(1/posterior.samples[, "Precision for id"]),
-                   vp = as.vector(vp.samples)
-                   )
-  cat("Entering new func... ")
-  df$predict = marginal.latent.alternative(fit, nsamples)
-  cat("New func worked!")
-  posterior = do.call("rbind", apply(df, 1, function(row){
-    QGparams(predict=row[["predict"]], var.a=row[["va"]], var.p=row[["vp"]],
-             model=modelname, verbose=F)
-  }))
-  posterior
+  
 }
 
 ## analyze things ran on markov
