@@ -226,7 +226,7 @@ Before developing methods for transformed heritability, we need to be able to sa
 
 ```{r}
 
-inla.posterior.marginal.latent.mode <- function(fit){
+marginal.latent.mode <- function(fit){
   #' Get mode for each marginal linear predictor
   modes = c()
   iter = 1
@@ -304,7 +304,11 @@ get.h2 <- function(inla.fit, n, use.scale=F, model=NA){
   return(h2.inla)
 }
 
-get.h2.from.qgparams <- function(inla.fit, modelname, n, averaging=F){
+get.h2.from.qgparams <- function(inla.fit, 
+                                 modelname, 
+                                 n, 
+                                 averaging=F,
+                                 averaging.mode.only=F){
   #' Computes a posterior of data-scale heritability (h2) using QGParams
   #'
   #' Params:
@@ -312,7 +316,9 @@ get.h2.from.qgparams <- function(inla.fit, modelname, n, averaging=F){
   #' modelname: A string specifying model
   #'    ("Gaussian", "binomN1.probit", "binom1.logit")
   #' n:         Number of samples  
-  #' averaging: Flag to determine if we want to average or nah
+  #' averaging: Flag to determine if we want to average over fixed effects
+  #' mode.only: Flag to determine if marginal latent should just be mode
+
   stopifnot(modelname %in% c("Gaussian", "binom1.probit", "binom1.logit"))
   samples.posterior <- inla.hyperpar.sample(n=n,inla.fit)
   vp.samples = 0
@@ -328,8 +334,7 @@ get.h2.from.qgparams <- function(inla.fit, modelname, n, averaging=F){
     h2.getter = function(...){
       get("h2.obs", suppressWarnings(QGparams(...)))
       }
-    out = mapply(h2.getter, mu, va.samples, vp.samples, modelname, MoreArgs=kwargs)
-    return(out)
+    posterior = mapply(h2.getter, mu, va.samples, vp.samples, modelname, MoreArgs=kwargs)
   }
   else{
     # Average over fixed effects
@@ -338,22 +343,23 @@ get.h2.from.qgparams <- function(inla.fit, modelname, n, averaging=F){
     df <- data.frame(va = as.vector(1/posterior.samples[, "Precision for id"]),
                      vp = as.vector(vp.samples)
                      )
-    df$predict = marginal.latent.alternative(fit, nsamples)
-    posterior = do.call("rbind", apply(df, 1, function(row){
-      QGparams(predict=row[["predict"]], var.a=row[["va"]], var.p=row[["vp"]],
-               model=modelname, verbose=F)
-    }))
-    posterior    
+    if(! averaging.mode.only){
+      df$predict = marginal.latent.samples(fit, nsamples)
+      posterior = do.call("rbind", apply(df, 1, function(row){
+        QGparams(predict=row[["predict"]], var.a=row[["va"]], var.p=row[["vp"]],
+                 model=modelname, verbose=F)
+      }))
+    }
+    else{
+      predict.argument = marginal.latent.mode(inla.fit)
+      posterior = do.call("rbind", apply(df, 1, function(r){
+        QGparams(predict=predict.argument, var.a=row[["va"]], var.p=row[["vp"]],
+                 model=modelname, verbose=F)
+      }))
+    }
   }
-
-}
-
-
-new.h2.transf <- function(fit, modelname, nsamples){
-  # This is very much WIP but works I think now
-  posterior.samples = inla.hyperpar.sample(nsamples, fit)
-  marginal.mode = inla.posterior.marginal.latent.mode(fit)
   
+  return(posterior)
 }
 
 ## analyze things ran on markov
@@ -367,8 +373,17 @@ truehist(heritability_notavged, main="No averaging",
          xlab=expression(h[obs]^2))
 truehist(scaled.heritability, main="Direct scaling",
          xlab=expression(h[obs]^2))
+load("heritabilities_SSH_binom1.probit.Rdata")
+truehist(heritability_averaged$h2.obs, main="Bayesian",
+         xlab=expression(h[obs]^2))
+truehist(heritability_frequentist_avged$h2.obs, main="Frequentist",
+         xlab=expression(h[obs]^2))
+truehist(heritability_notavged, main="No averaging",
+         xlab=expression(h[obs]^2))
+truehist(scaled.heritability, main="Direct scaling",
+         xlab=expression(h[obs]^2))
 
-#' Log (first run)
+#' Log (first run) TODO update with log stored in Laptop TMUX session 0
 # Called function at: Sun Feb 26 06:34:01 PM 2023
 # Entering `new.h2.transf` (Bayesian sampling)
 # Entering new func... DEBUG: Entering sampling for loop
@@ -391,6 +406,8 @@ We extend the contents of the INLA fit to include heritabilities on the differen
 
 ```{r}
 # Compute h2
+# TODO consider changing this to rather be stored in data.frame, this method is
+#       difficult to handle..
 n.samples = 10000
 fit.inla.gaussian$h2.latent = get.h2(fit.inla.gaussian, n.samples)
 fit.inla.logit$h2.latent = get.h2(fit.inla.logit, n.samples)
@@ -447,7 +464,7 @@ ggplot(df.transformed.h2, aes(x=log(samples), fill=Model)) +
 
 ```
 
-Let's try to make table dynamic:
+Method to export heritability estimates in a TeX table
 
 ```{r}
 get_mode <- function(vec){
@@ -459,7 +476,7 @@ model.name = unlist(strsplit("test.hei", "[.]"))[2]
 
 
 print_one_metric <- function(fit, param, digits){
-  cat(
+  paste(
     round(mean(get(param, fit)),digits), " (",
     round(get_mode(get(param, fit)),digits), ")\\newline $\\pm$ ",
     round(sd(get(param,fit)),digits), sep="")
@@ -469,14 +486,14 @@ print_heritability_table <- function(digits){
   #' `digits` is the number of significant digits
   #' Prints tabularx-table of heritability with posterior mean, posterior mode
   #' and standard deviation. Does it for logit, probit and Gaussian.
-  header = cat( "% TABLE FROM R:", format(Sys.time(), "%a %b %d %X %Y"), "\n",
+  header = paste( "% TABLE FROM R:", format(Sys.time(), "%a %b %d %X %Y"), "\n",
   "\\begin{table}[ht]\\centering\n",
     "\\begin{tabularx}{\\textwidth}{lXXX}\n",
     "\\hline\n",
     " & Binomial logit & Binomial probit & Gaussian  \\\\ \n",
     "\\hline \n"
   )
-  main = cat(
+  main = paste(
     "Latent &", print_one_metric(fit.inla.logit, "h2.latent", digits),
     "&", print_one_metric(fit.inla.probit, "h2.latent", digits),
     "&", print_one_metric(fit.inla.gaussian, "h2.latent", digits),
@@ -489,7 +506,7 @@ print_heritability_table <- function(digits){
     "&", print_one_metric(fit.inla.logit, "h2.qgglmm", digits),
     "& -- \n"
   )
-  footer = cat("\\end{tabularx}",
+  footer = paste("\\end{tabularx}",
                "\\caption{<Insert caption>}",
                "\\label{tab:heritabily gutta}",
                "\\end{table}", sep="\n")
@@ -512,7 +529,7 @@ print_heritability_table <- function(digits){
   # }
   # return(cat(out, "\\\\"))
 }
-print_metrics(4)
+print_heritability_table(4)
 
 ```
 
