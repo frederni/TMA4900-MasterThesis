@@ -371,21 +371,21 @@ get.h2.from.qgparams <- function(inla.fit,
   return(posterior)
 }
 
-#' Log (first run) TODO update with log stored in Laptop TMUX session 0
-# Called function at: Sun Feb 26 06:34:01 PM 2023
+#### Log from running function on Markov ####
+# Called function at: Mon Feb 27 11:39:41 AM 2023
 # Entering `new.h2.transf` (Bayesian sampling)
-# Entering new func... DEBUG: Entering sampling for loop
+# DEBUG: Entering sampling for loop
 # DEBUG: Entering transposing loop
-# New func worked!Done after 1.895322 minutes. Entering same function without the Bayesian stuff.
-# Done after 1.875852 minutes. Now without averaging:Done after 8.269284 minutes.
+# Done after 115.9634 minutes. Entering same function without the Bayesian stuff.
+# Done after 106.1235 minutes. Now without averaging:Done after 0.1312247 minutes.
 # Saving to disk...
 # [1] 0
-# Called function at: Sun Feb 26 10:20:25 PM 2023
+# Called function at: Mon Feb 27 03:21:54 PM 2023
 # Entering `new.h2.transf` (Bayesian sampling)
-# Entering new func... DEBUG: Entering sampling for loop
+# DEBUG: Entering sampling for loop
 # DEBUG: Entering transposing loop
-# New func worked!Done after 4.210027 minutes. Entering same function without the Bayesian stuff.
-# Done after 6.657132 minutes. Now without averaging:Done after 3.654567 minutes.
+# Done after 4.129497 minutes. Entering same function without the Bayesian stuff.
+# Done after 0.1096536 minutes. Now without averaging:Done after 0.05950377 minutes.
 # Saving to disk...
 # [1] 0
 ```
