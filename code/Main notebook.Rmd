@@ -21,7 +21,7 @@ library(nadiv)
 library(bdsmatrix)
 library(INLA)
 library(QGglmm)
-library(patchwork)
+# library(patchwork)
 # library(SMisc)
 library(ggplot2)
 library(latex2exp)
@@ -448,7 +448,7 @@ df.transformed.h2 = data.frame(
 ggplot(df.transformed.h2, aes(x=samples, fill=Model)) +
   geom_density(alpha=0.5) +
   ggtitle("Posterior of transformed heritability") +
-  xlab("(Latent-scale) Log-heritability") +
+  xlab("Heritability") +
   ylab("Density") + xlim(c(0,0.1))#+ scale_x_log10()
 
 
@@ -479,7 +479,7 @@ plot.markov.result <- function(rdata.file, ssh.samples, plot.title=NA, saveplot=
                )
   )
   p <- ggplot(df, aes(x=Heritability, fill=Method)) + geom_density(alpha=0.5) +
-    scale_x_log10() + ylab("Density")
+    ylab("Density") #+ scale_x_log10()
   if(!is.na(plot.title)) p = p + labs(title=plot.title)
   if(saveplot){
     ggsave(filename = paste0("../figures/",
@@ -491,9 +491,9 @@ plot.markov.result <- function(rdata.file, ssh.samples, plot.title=NA, saveplot=
   p
 }
 plot.markov.result("heritabilities_SSH_binom1.probit.Rdata", 10000,
-                   plot.title="Heritability for Probit model", saveplot=T)
+                   plot.title="Heritability for Probit model", saveplot=F)
 plot.markov.result("heritabilities_SSH_binom1.logit.Rdata", 10000,
-                   plot.title="Heritability for Logit model", saveplot=T)
+                   plot.title="Heritability for Logit model", saveplot=F)
 
 oldPlottingHeritability <- function(){
   #' Wrapper for old code
@@ -577,8 +577,9 @@ print_heritability_table(4)
 
 ```{r}
 
-simulated.heritability <- function(NeNc=0.5, idgen=100, nGen = 9, sigmaA=0.4,
-                                   linear.predictor=NA, simulated.formula=NA){
+simulated.heritability <- function(NeNc=0.5, idgen=100, nGen = 9, sigmaA=0.8,
+                                   linear.predictor=NA, simulated.formula=NA,
+                                   dichotomize="round"){
   #' Generate pedigree, fit gaussian (INLA) model and 
   #' Remark: linear.predictor should be a callable and pass (at least) u
   #' 
@@ -614,13 +615,21 @@ simulated.heritability <- function(NeNc=0.5, idgen=100, nGen = 9, sigmaA=0.4,
   
   # Generating "true" y_i
   
-  # sigmoid.scale <- function(x) exp(x)/(exp(x)+1)
-  # simulated.response <- rbinom(length(u), size=1,
-  #                              prob=sigmoid.scale(linear.predictor(u)))
-  
-  # This assumes mean of \eta_i is 0
-  simulated.response <- ifelse(linear.predictor(u) <= 0, 0, 1)
-  p = mean(simulated.response) # portion of true responses
+  if(dichotomize == "binom"){
+      sigmoid.scale <- function(x) exp(x)/(exp(x)+1)
+      simulated.response <- rbinom(length(u), size=1,
+                                   prob=sigmoid.scale(linear.predictor(u)))
+  }
+  else if(dichotomize == "round"){
+    # This assumes mean of \eta_i is 0
+    simulated.response <- ifelse(linear.predictor(u) <= 0, 0, 1)
+  }
+  else{
+    stop(paste0("Unknown dichotomization method '", dichotomize, "'. ",
+                "Consider using 'binom' or 'round'."))
+  }
+  p = mean(simulated.response) # portion of true responses 
+
   
   # Model fitting LMM for binary trait
   # First reload formula environment to access local variables
@@ -692,7 +701,9 @@ data.frame(Simulation=c(
 # ------------------------------------------------------------------------------
 #' It doesn't seem like it works so well for larger sigmaA's.
 #' Let's quantitatively look into deviation:
-plot.h2.deviation <- function(){
+plot.h2.deviation <- function(dichotomize="round",
+                              title="True versus fitted heritability",
+                              SAVE.PLOT=T, plot.fn=NA){
   sigmaA.list <- c(1:10 %o% 10^(-3:3)) # Log scale between 10^-3 to 10^3
   deviation = c()
   estimates = c()
@@ -700,8 +711,10 @@ plot.h2.deviation <- function(){
   for(sigmaA in sigmaA.list){
     cat(">")
     result = simulated.heritability(
+      dichotomize=dichotomize,
       linear.predictor=function(u) u+rnorm(length(u)),
       simulated.formula=simulated.formula, sigmaA=sigmaA)
+    
     threshold.scaled.h2 <- 1/threshold.scaling.param(result$p) * result$heritability
     # True h^2 is dependent on linear predictor, i.e. sigmaA/(sigmaA+1) here
     simulation.h2.true <- sigmaA/(sigmaA+1)
@@ -710,20 +723,28 @@ plot.h2.deviation <- function(){
     estimates = c(estimates, mean(threshold.scaled.h2))
     deviation = c(deviation, simulation.h2.true-mean(threshold.scaled.h2))
   }
-  data.frame(estimates=estimates, deviation=deviation,
+  res = data.frame(estimates=estimates, deviation=deviation,
              true.vals=true.vals, sigmaA=sigmaA.list)
-}
-res = plot.h2.deviation()
-ggplot(data=res, aes(x=sigmaA)) +
-  geom_line(aes(y=true.vals,color="True h^2")) +
-  geom_line(aes(y=estimates, color="Fitted h^2")) +
-  xlab(TeX("$\\sigma^2$")) + ylab(TeX("$h^2$")) + 
-  scale_x_continuous(trans='log10') +
-  scale_color_manual(name="True versus fitted heritability",
-    breaks=c("True h^2", "Fitted h^2"),
-    values = c("True h^2"='darkred', "Fitted h^2"='steelblue')
-    )
-if(SAVE.PLOT) ggsave("../figures/simulation_deviance_from_true_h2.pdf")
+  # Plotting
+  p = ggplot(data=res, aes(x=sigmaA)) +
+    geom_line(aes(y=true.vals,color="True h^2")) +
+    geom_line(aes(y=estimates, color="Fitted h^2")) +
+    xlab(TeX("$\\sigma^2$")) + ylab(TeX("$h^2$")) + 
+    scale_x_continuous(trans='log10') +
+    scale_color_manual(name=title,
+      breaks=c("True h^2", "Fitted h^2"),
+      values = c("True h^2"='darkred', "Fitted h^2"='steelblue')
+      )
+  if(SAVE.PLOT) ggsave(paste0("../figures/simulation_deviance_",
+                              if(!is.na(plot.fn)) plot.fn, ".pdf"), p)
+  return(p)
+  }
+
+plot.h2.deviation(plot.fn="rounding")
+plot.h2.deviation(dichotomize = "binom",
+                  title="Fitted versus true h^2, binomial response",
+                  plot.fn="binom")
+
 
 simulation.hyperparameters <- function(NeNc_list=0.1, sigmaA_list=0.4){
   p = list()
@@ -777,14 +798,21 @@ We want to research why this is so bad a little more. First, let's look at varia
 var(result$simulated.response) # Variance about 1/4
 
 # Try to re-run with another linear predictor
-sim.result = simulated.heritability(NeNc=0.5,idgen=100,nGen=9,sigmaA=10,
-                                    linear.predictor = function(u) u,
-                                    simulated.formula = simulated.formula)
-
-threshold.scaled.h2 <- 1/threshold.scaling.param(sim.result$p) * sim.result$heritability
-simulation.h2.true <- v_a/(v_a+0) # Dependent on linear predictor, e.g. sigmaA/(sigmaA+1)
-
-data.frame(Simulation=c(
+report.simulated.threshold.estimate <- function(NeNc,
+                                                idgen,
+                                                nGen,
+                                                sigmaA,
+                                                linear.predictor,
+                                                simulated.formula,
+                                                Vp=NA){
+  stopifnot("Vp required to get true h^2" = !is.na(Vp))
+  sim.result = simulated.heritability(NeNc,idgen,nGen,sigmaA,
+                                  linear.predictor,simulated.formula)
+  threshold.scaled.h2 <- 1/threshold.scaling.param(sim.result$p) * 
+    sim.result$heritability
+  simulation.h2.true <- sigmaA/(Vp)
+  
+  data.frame(Simulation=c(
     simulation.h2.true,
     mean(threshold.scaled.h2),
     paste0("(",
@@ -802,24 +830,56 @@ data.frame(Simulation=c(
                 "95% Confidence interval",
                 "Estimated latent mean")
 )
+}
+report.simulated.threshold.estimate(0.5, 100, 24, 10, function(u) u,
+                                    simulated.formula,10)
+
+sim.result = simulated.heritability(NeNc=0.5,idgen=100,nGen=9,sigmaA=10,
+                                    linear.predictor = function(u) u,
+                                    simulated.formula = simulated.formula)
+
+
 
 # Now we want to look into how A (relatedness matrix) looks like..
-ped0 <- generatePedigree(nId = 100, nGeneration = 9, 
-                         nFather = 100 * 0.5, nMother = 100 * 0.5)
-pedigree <- ped0[ , c(1,3,2)]
-names(pedigree) <- c("id", "dam", "sire")
-u <- rbv(pedigree, 0.1)
-simulated.d.ped <- nadiv::prepPed(pedigree)
-A.matrix = nadiv::makeA(simulated.d.ped)
-A.diag = diag(A.matrix)
-A.nondiag = A.matrix
-diag(A.nondiag) = NA
-{
+plot.A.matrix <- function(pedigree, title.append=NA){
+  A.matrix = nadiv::makeA(pedigree)
+  A.diag = diag(A.matrix)
+  A.nondiag = A.matrix
+  diag(A.nondiag) = NA
+  {
   par(mfrow=c(2,1))
-  truehist(A.nondiag@x, main="Off-diagonal elements of A")
-  plot(A.diag, main="Diagonal elements of A")  
+  truehist(A.nondiag@x,
+           main=paste0(
+             "Off-diagonal elements of A",
+             if(!is.na(title.append)) title.append
+             ),
+           xlab="Relatedness")
+  ## Temp!
+  true = nadiv::makeA(d.ped[,c("id","mother.id","father.id")])
+  true.nd = true
+  diag(true.nd) = NA
+  truehist(true.nd@x,
+           main="Off-diagonal elements of A, Song sparrow data")
+  
+  # End temp
+  # plot(A.diag, main="Diagonal elements of A")  
+  }
 }
 
+# For the simulation data:
+ped0 <- generatePedigree(nId = 100, nGeneration = 24, 
+                         nFather = 0.5*100, nMother = 0.5*100)
+pedigree <- ped0[ , c(1,3,2)]
+names(pedigree) <- c("id", "dam", "sire")
+simulated.d.ped <- nadiv::prepPed(pedigree)
+plot.A.matrix(simulated.d.ped, title.append = ", 24 generation simulation")
+
+
+# Song sparrow data
+plot.A.matrix(d.ped[,c("id","mother.id","father.id")], ", Song sparrow data")
+
 ```
-This is an interesting observation. First, most of the off-diagonal elements are very close to 0, indicating almost no realtedness. Secondly, not all diagonal elements are themselves 1. What does this mean?
+This is an interesting observation. First, most of the off-diagonal elements are very close to 0, indicating almost no relatedness. Secondly, not all diagonal elements are themselves 1. What does this mean?
+
+Finally, let's try to generate the response differently,
 
