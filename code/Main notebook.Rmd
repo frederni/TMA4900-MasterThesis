@@ -303,9 +303,8 @@ get.h2 <- function(inla.fit, n, use.scale=F, model=NA){
   for(cname in colnames(samples)){ denominator = denominator + 1/samples[, cname]}
   
   if(use.scale){
-    # We need model specification to use scale
-    stopifnot(model %in% c("binom1.probit", "binom1.logit"))
-    scale.param = ifelse(model == "binom1.probit", 1, pi^2/3)
+    scales.dictionary = list(binom1.probit=1, binom1.logit=pi^2/3, round=0.25)
+    scale.param = get(model, scales.dictionary)
     denominator = denominator + scale.param
   }
   
@@ -639,7 +638,6 @@ simulated.heritability <- function(NeNc=0.5, idgen=100, nGen = 9, sigmaA=0.8,
                             )
   # Checks for error status in INLA fit,
   stopifnot(simulated.fit.inla$mode$mode.status == 0) # status != 0 is trouble
-  
   heritability = get.h2(simulated.fit.inla, 10000) #10k samples should be suff
   list(
     heritability=heritability,
@@ -650,7 +648,6 @@ simulated.heritability <- function(NeNc=0.5, idgen=100, nGen = 9, sigmaA=0.8,
     simulated.response=simulated.response
   )
 }
-
 
 
 ```
@@ -676,7 +673,7 @@ result = simulated.heritability(linear.predictor=function(u) u+rnorm(length(u)),
                        simulated.formula=simulated.formula, sigmaA=v_a)
 
 
-threshold.scaled.h2 <- 1/threshold.scaling.param(result$p) * result$heritability
+threshold.scaled.h2 <- 1/threshold.scaling.param(result$p) * result$heritability 
 simulation.h2.true <- v_a/(v_a+1) # Dependent on linear predictor, e.g. sigmaA/(sigmaA+1)
 
 data.frame(Simulation=c(
@@ -717,7 +714,7 @@ plot.h2.deviation <- function(dichotomize="round",
     
     threshold.scaled.h2 <- 1/threshold.scaling.param(result$p) * result$heritability
     # True h^2 is dependent on linear predictor, i.e. sigmaA/(sigmaA+1) here
-    simulation.h2.true <- sigmaA/(sigmaA+1)
+    simulation.h2.true <- sigmaA/(sigmaA+1+0.25)
     
     true.vals = c(true.vals, simulation.h2.true)
     estimates = c(estimates, mean(threshold.scaled.h2))
@@ -737,10 +734,13 @@ plot.h2.deviation <- function(dichotomize="round",
       )
   if(SAVE.PLOT) ggsave(paste0("../figures/simulation_deviance_",
                               if(!is.na(plot.fn)) plot.fn, ".pdf"), p)
-  return(p)
+  return(list(res=res,p=p))
   }
 
-plot.h2.deviation(plot.fn="rounding")
+temp = plot.h2.deviation(SAVE.PLOT=F)
+ggplot(data=temp$res, aes(x=sigmaA)) + geom_line(aes(y=true.vals*0.25), color="darkred") +
+  geom_line(aes(y=estimates),color="steelblue")  + xlim(c(0,1))
+
 plot.h2.deviation(dichotomize = "binom",
                   title="Fitted versus true h^2, binomial response",
                   plot.fn="binom")
@@ -854,15 +854,7 @@ plot.A.matrix <- function(pedigree, title.append=NA){
              if(!is.na(title.append)) title.append
              ),
            xlab="Relatedness")
-  ## Temp!
-  true = nadiv::makeA(d.ped[,c("id","mother.id","father.id")])
-  true.nd = true
-  diag(true.nd) = NA
-  truehist(true.nd@x,
-           main="Off-diagonal elements of A, Song sparrow data")
-  
-  # End temp
-  # plot(A.diag, main="Diagonal elements of A")  
+  plot(A.diag, main="Diagonal elements of A")
   }
 }
 
@@ -883,3 +875,40 @@ This is an interesting observation. First, most of the off-diagonal elements are
 
 Finally, let's try to generate the response differently,
 
+
+## Dichotomization variance
+
+In general $u \sim \mathcal N(0, \sigma^2_A)$. Let $\eta=u$. And let $v$ be defined so that
+$$
+v = 
+\begin{cases}
+0, \quad u\le0,\\
+1,\quad u > 0
+\end{cases}
+$$
+Then,
+$$
+E[v] = 0 \cdot P(v=0) + 1\cdot P(v=1) = P(u>0) = 1-P(u/\sigma_A \le0)=1-\Phi(0)=0.5
+$$
+The variance of $v$ becomes
+$$
+Var(v)=E[\left(v-E(v)\right)^2]=P(v=0)(0-0.5)^2+P(v=1)(1-0.5)^2=0.25\;\forall \sigma^2_A
+$$
+
+$$
+Var(v)/Var(u)=\frac{1}{4\sigma^2}
+$$
+
+Similarly, if $\eta=u+z, z\sim\mathcal N(0,1)$, then
+$$
+v = 
+\begin{cases}
+0, \quad u+z\le0,\\
+1,\quad u+z > 0
+\end{cases}
+$$
+Similarly, since $u+z \sim \mathcal N(0,\sigma^2_A + 1)$,
+$$
+E[v] = E[u+z >0] = 0.5,
+$$
+and we get the same estimate for variance. In fact, as long as the linear predictor only consists of Gaussian terms with sum of mean 0, we should get the same. Maybe we can try to include the 1/4 factor in the denominator when computing heritability? 
