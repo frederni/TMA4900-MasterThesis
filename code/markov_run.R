@@ -1,109 +1,44 @@
-#' ---
-#' title: "Main notebook"
-#' output: pdf_document
-#' date: '2023-02-01'
-#' ---
-#' 
-## ----setup, include=FALSE-----------------------------------------------------------------------------------------------------------------------------
-
-#' 
-#' # Acknowledgements
-#' 
-#' The data and a large portion of data preprocessing is provided by Jane Reid. The re-implementation into INLA is also largely based on the work from Stefanie Muff.
-#' 
-#' # Data loading
-#' 
-## ----data loading-------------------------------------------------------------------------------------------------------------------------------------
-# library(MCMCglmm)
+# R script to run longer QGglmm procedures on Markov server
 library(MASS)
 library(nadiv)
 library(bdsmatrix)
 library(INLA)
-# library(SMisc)
 library(ggplot2)
-if (!require("BiocManager", quietly = TRUE))
-    install.packages("BiocManager")
-if (!require("GeneticsPed", quietly = TRUE))
-    BiocManager::install("GeneticsPed")
-# if (!require("MCMCglmm", quietly = TRUE))
-#     install.packages("../MCMCglmm-rbv-patch.tar.gz")
-
-library("GeneticsPed") 
+# if (!require("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# if (!require("GeneticsPed", quietly = TRUE))
+#     BiocManager::install("GeneticsPed")
+# library("GeneticsPed") 
 library(QGglmm)
-# library("MCMCglmm")
+
 
 
 qg.data.gg.inds <- read.table("../data/qg.data.gg.inds.steffi.txt", header=T)
 d.ped <- ped.prune.inds <- read.table("../data/ped.prune.inds.steffi.txt", header=T)
 d.Q <-  read.table("../data/Q.data.steffi.txt", header=T)
-
 qg.data.gg.inds$natalyr.id <- qg.data.gg.inds$natalyr.no
 
-
-#' 
-#' Scaling continuous variances can be more stable: (I think?)
-#' 
-## -----------------------------------------------------------------------------------------------------------------------------------------------------
 qg.data.gg.inds$f.coef.sc <- scale(qg.data.gg.inds$f.coef,scale=FALSE)
 qg.data.gg.inds$g1.sc <- scale(qg.data.gg.inds$g1,scale=FALSE)
 qg.data.gg.inds$natalyr.no.sc <- scale(qg.data.gg.inds$natalyr.no,scale=FALSE)
 qg.data.gg.inds$brood.date.sc <- scale(qg.data.gg.inds$brood.date,scale=FALSE)
-
-#' 
-#' The sex covariate is either `1` or `2`, so we binarize this covariate:
-#' 
-## -----------------------------------------------------------------------------------------------------------------------------------------------------
 qg.data.gg.inds$sex <- qg.data.gg.inds$sex.use.x1 - 1 
 
-#' 
-#' ## Deriving *A*
-#' 
-#' In order to derive the A matrix, we need to work a bit
-#' 
-## -----------------------------------------------------------------------------------------------------------------------------------------------------
 d.ped <- nadiv::prepPed(d.ped)
-
-#' 
-#' In particular, for INLA we need ids that run from 1 to the number of individuals
-#' 
-## -----------------------------------------------------------------------------------------------------------------------------------------------------
 d.ped$id <- 1:(nrow(d.ped))
-
-#' 
-#' Need a map file to keep track of the ids
-#' 
-## -----------------------------------------------------------------------------------------------------------------------------------------------------
 d.map <- d.ped[,c("ninecode","id")]
 d.map$g1 <- d.Q[match(d.map$ninecode,d.Q$ninecode),"g1"]
 d.map$foc0 <- d.Q[match(d.map$ninecode,d.Q$ninecode),"foc0"]
-
-#' 
-#' Give mother and father the id
-#' 
-## -----------------------------------------------------------------------------------------------------------------------------------------------------
 d.ped$mother.id <- d.map[match(d.ped$gendam, d.map$ninecode),"id"]
 d.ped$father.id <- d.map[match(d.ped$gensire, d.map$ninecode),"id"]
 
-#' 
-#' Make the inverse A matrix using the `nadiv` package:
-#' 
-## -----------------------------------------------------------------------------------------------------------------------------------------------------
 Cmatrix <- nadiv::makeAinv(d.ped[,c("id","mother.id","father.id")])$Ainv
 
-#' 
-#' Store the id twice: Once for the breeding value, and once for the independent residuals u with variance 1 (the latter are not going to be included in the end, but we checked what happened when they were there)
-#' 
-## -----------------------------------------------------------------------------------------------------------------------------------------------------
 qg.data.gg.inds$id <- d.map[match(qg.data.gg.inds$ninecode, d.map$ninecode), "id"]
 qg.data.gg.inds$u <- 1:nrow(qg.data.gg.inds)
 
-#' 
-#' # INLA
-#' 
-#' The general INLA formula is provided below, where `f()` encode the random effect:
-#' 
-## -----------------------------------------------------------------------------------------------------------------------------------------------------
 
+## INLA
 formula.inla.scaled = surv.ind.to.ad ~ f.coef.sc + g1.sc + natalyr.no.sc + brood.date.sc + sex +
   f(nestrec, model="iid",hyper=list(
     prec=list(initial=log(1/0.05), prior="pc.prec",param=c(1,0.05)) # PC priors
@@ -116,17 +51,7 @@ formula.inla.scaled = surv.ind.to.ad ~ f.coef.sc + g1.sc + natalyr.no.sc + brood
     constr = F, # Doesn't really matter
     hyper=list(
       prec=list(initial=log(1/10), prior="pc.prec",param=c(1,0.05)) # PC priors
-     ))  # + # this last part is only needed if the u~N(0,1) residuals are included
-# f(u, model="iid",
-#   constr=TRUE,
-#   hyper=list(
-#     prec=list(initial=log(1), fixed=TRUE) # Fixed variance to 1
-#   )) # This last component adds the independent residuals with variance 1;
-
-#' 
-#' Now we call INLA models, this is the slowest part:
-#' 
-## -----------------------------------------------------------------------------------------------------------------------------------------------------
+     ))  
 
 fit.inla.probit = inla(formula=formula.inla.scaled, family="binomial",
                        data=qg.data.gg.inds,
@@ -159,8 +84,6 @@ inla.posterior.marginal.latent.mode <- function(fit){
 }
 
 marginal.latent.samples <- function(fit, nsamples){
-  #' TODO : Work in progress!!
-  #' TODO : improve runtime, seems like inla.rmarginal takes the longest time.
   #' What if we sample.marginal `nsamples` samples for each predictor
   #' Output is list(c(...), c(...), ..., c(...)) w/ nsamples list elems,
   #' and 2000ish elements in each c() (the different predictor samples)
@@ -184,8 +107,6 @@ marginal.latent.samples <- function(fit, nsamples){
   }
   return(out)
 }
-
-
 
 get.h2 <- function(inla.fit, n, use.scale=F, model=NA){
   #' Get n samples of heritability from INLA fit
