@@ -700,12 +700,21 @@ data.frame(Simulation=c(
 #' Let's quantitatively look into deviation:
 plot.h2.deviation <- function(dichotomize="round",
                               title="True versus fitted heritability",
-                              SAVE.PLOT=T, plot.fn=NA){
-  # sigmaA.list <- c(1:10 %o% 10^(-3:3)) # Log scale between 10^-3 to 10^3
-  sigmaA.list = seq(0.001, 0.26, by=0.01)
+                              SAVE.PLOT=T, plot.fn=NA, sigma.scale="log"){
+  if(sigma.scale == "log"){
+    sigmaA.list <- c(1:10 %o% 10^(-3:3)) # Log scale between 10^-3 to 10^3
+  }
+  else if(sigma.scale == "small"){ # Linear scale between 10^-3 to 0.259
+    sigmaA.list = seq(0.001, 0.26, by=0.01)
+  }
+  else{
+    stop("Unrecognized scale for sigmaA.")
+  }
+  
   deviation = c()
   estimates = c()
   true.vals = c()
+  true.alt = c()
   for(sigmaA in sigmaA.list){
     cat(">")
     result = simulated.heritability(
@@ -716,13 +725,17 @@ plot.h2.deviation <- function(dichotomize="round",
     threshold.scaled.h2 <- 1/threshold.scaling.param(result$p) * result$heritability
     # True h^2 is dependent on linear predictor, i.e. sigmaA/(sigmaA+1) here
     simulation.h2.true <- sigmaA/(sigmaA+1)
+    # Try with suggestion from Steffi, sigma_A^2/sigma_P^2¨
+    simulation.h2.true.alt <- sigmaA/var(result$simulated.response)
     
     true.vals = c(true.vals, simulation.h2.true)
-    estimates = c(estimates, mean(threshold.scaled.h2))
+    estimates = c(estimates, mean(threshold.scaled.h2)) # TODO consider getting quantiles of this metric, to plot 95% CI
     deviation = c(deviation, simulation.h2.true-mean(threshold.scaled.h2))
+    true.alt = c(true.alt, simulation.h2.true.alt)
   }
   res = data.frame(estimates=estimates, deviation=deviation,
              true.vals=true.vals,
+             true.alt = true.alt,
              sigmaA=sigmaA.list)
   # Plotting
   p = ggplot(data=res, aes(x=sigmaA)) +
@@ -739,13 +752,27 @@ plot.h2.deviation <- function(dichotomize="round",
   return(list(res=res,p=p))
   }
 
+### Plots for sigmaA in (10^-3, 10^3), including 0.25*true_vals
 temp = plot.h2.deviation(SAVE.PLOT=F)
 true.with.dich.var = temp$res$sigmaA/(temp$res$sigmaA +1+0.25)
 temp$res$true.vals.dich = true.with.dich.var
+
 ggplot(data=temp$res, aes(x=sigmaA)) +
+  geom_line(aes(y=true.alt, color="True")) +
+  geom_line(aes(y=estimates,color="Estimated"))  +
+  geom_line(aes(y=true.alt*0.25, color="True * dich. variance")) +
+  scale_x_log10() +
+  scale_color_manual(name="Simulated heritability",
+                     values=c('True'='darkred',
+                              'Estimated'='steelblue',
+                              'True * dich. variance'='darkgreen'))
+
+temp2 = plot.h2.deviation(SAVE.PLOT=F, sigma.scale="small")
+ggplot(data=temp2$res, aes(x=sigmaA)) +
   geom_line(aes(y=true.vals, color="True")) +
   geom_line(aes(y=estimates,color="Estimated"))  +
   geom_line(aes(y=true.vals*0.25, color="True * dich. variance")) +
+  scale_x_log10() +
   scale_color_manual(name="Simulated heritability",
                      values=c('True'='darkred',
                               'Estimated'='steelblue',
