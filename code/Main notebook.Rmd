@@ -668,15 +668,21 @@ simulated.formula = simulated.response ~ f(id,model="generic0",
       prec=list(initial=log(1/10), prior="pc.prec",param=c(1,0.05)) # PC priors
     ))
 
-v_a = 0.1
-result = simulated.heritability(linear.predictor=function(u) u+rnorm(length(u)),
-                       simulated.formula=simulated.formula, sigmaA=v_a)
-
-
-threshold.scaled.h2 <- 1/threshold.scaling.param(result$p) * result$heritability 
-simulation.h2.true <- v_a/(v_a+1) # Dependent on linear predictor, e.g. sigmaA/(sigmaA+1)
-
-data.frame(Simulation=c(
+report.simulated.threshold.estimate <- function(NeNc,
+                                                idgen,
+                                                nGen,
+                                                sigmaA,
+                                                linear.predictor,
+                                                simulated.formula,
+                                                Vp=NA){
+  stopifnot("Vp required to get true h^2" = !is.na(Vp))
+  sim.result = simulated.heritability(NeNc,idgen,nGen,sigmaA,
+                                  linear.predictor,simulated.formula)
+  threshold.scaled.h2 <- threshold.scaling.param(sim.result$p) * 
+    sim.result$heritability
+  simulation.h2.true <- sigmaA/(Vp)
+  
+  data.frame(Simulation=c(
     simulation.h2.true,
     mean(threshold.scaled.h2),
     paste0("(",
@@ -688,18 +694,27 @@ data.frame(Simulation=c(
         collapse=", "),
       ")"
       ),
-    mean(result$summary$mean)
+    mean(sim.result$summary$mean)
   ),
   row.names = c("True h^2", "Estimated h^2_obs, mean",
                 "95% Confidence interval",
                 "Estimated latent mean")
-)
+  )
+}
+sigmaA704=0.05
+r = report.simulated.threshold.estimate(NeNc=0.5,idgen=100,nGen=9, sigmaA=sigmaA704,
+                                    function(u){u+rnorm(length(u))},
+                                    simulated.formula,
+                                    Vp=sigmaA704 + 1)
+r
 
-# ------------------------------------------------------------------------------
-#' It doesn't seem like it works so well for larger sigmaA's.
-#' Let's quantitatively look into deviation:
+```
+
+It doesn't seem like it works so well for larger sigmaA's.
+Let's quantitatively look into deviation:
+```{r}
 plot.h2.deviation <- function(dichotomize="round",
-                              title="True versus fitted heritability",
+                              title="Simulation heritability,\ndichotomized with rounding",
                               SAVE.PLOT=T, plot.fn=NA, sigma.scale="log"){
   if(sigma.scale == "log"){
     sigmaA.list <- c(1:10 %o% 10^(-3:3)) # Log scale between 10^-3 to 10^3
@@ -713,39 +728,48 @@ plot.h2.deviation <- function(dichotomize="round",
   
   deviation = c()
   estimates = c()
+  latent = c()
   true.vals = c()
-  true.alt = c()
+  est.CI.u = c()
+  est.CI.l = c()
   for(sigmaA in sigmaA.list){
     cat(">")
-    result = simulated.heritability(
-      dichotomize=dichotomize,
-      linear.predictor=function(u) u+rnorm(length(u)),
-      simulated.formula=simulated.formula, sigmaA=sigmaA)
+    result = simulated.heritability(NeNc=0.5,idgen=100,nGen=9, sigmaA=sigmaA,
+      linear.predictor=function(u){u+rnorm(length(u))},
+      simulated.formula=simulated.formula,
+      dichotomize=dichotomize
+      )
     
-    threshold.scaled.h2 <- 1/threshold.scaling.param(result$p) * result$heritability
+    threshold.scaled.h2 <- threshold.scaling.param(result$p) * 
+      result$heritability
     # True h^2 is dependent on linear predictor, i.e. sigmaA/(sigmaA+1) here
     simulation.h2.true <- sigmaA/(sigmaA+1)
-    # Try with suggestion from Steffi, sigma_A^2/sigma_P^2¨
-    simulation.h2.true.alt <- sigmaA/var(result$simulated.response)
     
+    latent = c(latent, mean(result$heritability))
     true.vals = c(true.vals, simulation.h2.true)
-    estimates = c(estimates, mean(threshold.scaled.h2)) # TODO consider getting quantiles of this metric, to plot 95% CI
+    estimates.CI = quantile(threshold.scaled.h2, probs=c(0.025, 0.975))
+    estimates = c(estimates, mean(threshold.scaled.h2))
     deviation = c(deviation, simulation.h2.true-mean(threshold.scaled.h2))
-    true.alt = c(true.alt, simulation.h2.true.alt)
+    est.CI.l = c(est.CI.l, estimates.CI[1])
+    est.CI.u = c(est.CI.u, estimates.CI[2])
   }
   res = data.frame(estimates=estimates, deviation=deviation,
-             true.vals=true.vals,
-             true.alt = true.alt,
+             true.vals=true.vals, latent=latent,
+             est.CI.l=est.CI.l, est.CI.u=est.CI.u,
              sigmaA=sigmaA.list)
   # Plotting
   p = ggplot(data=res, aes(x=sigmaA)) +
+    geom_ribbon(aes(ymin=est.CI.l, ymax=est.CI.u), alpha=0.1) + 
     geom_line(aes(y=true.vals,color="True h^2")) +
-    geom_line(aes(y=estimates, color="Fitted h^2")) +
+    geom_line(aes(y=estimates, color="Fitted h^2 (Threshold-scaled)")) +
+    geom_line(aes(y=latent, color="Fitted h^2 (Latent)")) +
     xlab(TeX("$\\sigma^2$")) + ylab(TeX("$h^2$")) + 
-    scale_x_continuous(trans='log10') +
+    scale_x_log10() +
     scale_color_manual(name=title,
-      breaks=c("True h^2", "Fitted h^2"),
-      values = c("True h^2"='darkred', "Fitted h^2"='steelblue')
+      breaks=c("True h^2", "Fitted h^2 (Threshold-scaled)",
+               "Fitted h^2 (Latent)"),
+      values = c("True h^2"='darkred', "Fitted h^2 (Threshold-scaled)"='steelblue',
+                 "Fitted h^2 (Latent)"='darkgreen')
       )
   if(SAVE.PLOT) ggsave(paste0("../figures/simulation_deviance_",
                               if(!is.na(plot.fn)) plot.fn, ".pdf"), p)
@@ -753,35 +777,18 @@ plot.h2.deviation <- function(dichotomize="round",
   }
 
 ### Plots for sigmaA in (10^-3, 10^3), including 0.25*true_vals
-temp = plot.h2.deviation(SAVE.PLOT=F)
-true.with.dich.var = temp$res$sigmaA/(temp$res$sigmaA +1+0.25)
-temp$res$true.vals.dich = true.with.dich.var
 
-ggplot(data=temp$res, aes(x=sigmaA)) +
-  geom_line(aes(y=true.alt, color="True")) +
-  geom_line(aes(y=estimates,color="Estimated"))  +
-  geom_line(aes(y=true.alt*0.25, color="True * dich. variance")) +
-  scale_x_log10() +
-  scale_color_manual(name="Simulated heritability",
-                     values=c('True'='darkred',
-                              'Estimated'='steelblue',
-                              'True * dich. variance'='darkgreen'))
+simulation.res = plot.h2.deviation(plot.fn="round")
+simulation.res$p
 
-temp2 = plot.h2.deviation(SAVE.PLOT=F, sigma.scale="small")
-ggplot(data=temp2$res, aes(x=sigmaA)) +
-  geom_line(aes(y=true.vals, color="True")) +
-  geom_line(aes(y=estimates,color="Estimated"))  +
-  geom_line(aes(y=true.vals*0.25, color="True * dich. variance")) +
-  scale_x_log10() +
-  scale_color_manual(name="Simulated heritability",
-                     values=c('True'='darkred',
-                              'Estimated'='steelblue',
-                              'True * dich. variance'='darkgreen'))
+### Plot for small values og sigmaA, but finer grid
+simulation2.res = plot.h2.deviation(SAVE.PLOT=F, sigma.scale="small")
+simulation2.res$p
 
+### Standard plotting with different dichotomization techniques
 plot.h2.deviation(dichotomize = "binom",
-                  title="Fitted versus true h^2, binomial response",
+                  title="Simulation heritability,\ndichotomized as binomial",
                   plot.fn="binom")
-
 
 simulation.hyperparameters <- function(NeNc_list=0.1, sigmaA_list=0.4){
   p = list()
@@ -810,22 +817,25 @@ simulation.hyperparameters <- function(NeNc_list=0.1, sigmaA_list=0.4){
   return(p)
 }
 
-p = simulation.hyperparameters(NeNc_list = c(0.05, 0.1, 0.25, 0.5))
-p2 = simulation.hyperparameters(sigmaA_list=c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75)*100)
-
-# TODO these are currently not saved as figured. Not sure if we need them.
-
-par(mfrow=c(2,2))
-for(i in names(p)){
-  truehist(get(i,p), xlab=paste("NeNc =",i))
-  abline(v=0.4)
+hyperparameters_wrapper <- function(){
+  # To avoid being ran every time...
+  p = simulation.hyperparameters(NeNc_list = c(0.05, 0.1, 0.25, 0.5))
+  p2 = simulation.hyperparameters(sigmaA_list=c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75)*100)
+  
+  
+  par(mfrow=c(2,2))
+  for(i in names(p)){
+    truehist(get(i,p), xlab=paste("NeNc =",i))
+    abline(v=0.4)
+  }
+  par(mfrow=c(3,2))
+  for(i in names(p2)){
+    truehist(get(i,p2), xlab = paste("sigmaA =", i))
+    cat("True h2", as.numeric(i)/(as.numeric(i)+1), "\n")
+    abline(v=as.numeric(i)/(as.numeric(i)+1)) # a+e_i, e_i~N
+  }
 }
-par(mfrow=c(3,2))
-for(i in names(p2)){
-  truehist(get(i,p2), xlab = paste("sigmaA =", i))
-  cat("True h2", as.numeric(i)/(as.numeric(i)+1), "\n")
-  abline(v=as.numeric(i)/(as.numeric(i)+1)) # a+e_i, e_i~N
-}
+
 
 ```
 We want to research why this is so bad a little more. First, let's look at variances of the simulated $y_i$'s themselves.
@@ -835,39 +845,7 @@ We want to research why this is so bad a little more. First, let's look at varia
 var(result$simulated.response) # Variance about 1/4
 
 # Try to re-run with another linear predictor
-report.simulated.threshold.estimate <- function(NeNc,
-                                                idgen,
-                                                nGen,
-                                                sigmaA,
-                                                linear.predictor,
-                                                simulated.formula,
-                                                Vp=NA){
-  stopifnot("Vp required to get true h^2" = !is.na(Vp))
-  sim.result = simulated.heritability(NeNc,idgen,nGen,sigmaA,
-                                  linear.predictor,simulated.formula)
-  threshold.scaled.h2 <- 1/threshold.scaling.param(sim.result$p) * 
-    sim.result$heritability
-  simulation.h2.true <- sigmaA/(Vp)
-  
-  data.frame(Simulation=c(
-    simulation.h2.true,
-    mean(threshold.scaled.h2),
-    paste0("(",
-      paste(
-        format(
-          quantile(threshold.scaled.h2,
-                   probs=c(0.025,0.975)),
-          digits=4),
-        collapse=", "),
-      ")"
-      ),
-    mean(sim.result$summary$mean)
-  ),
-  row.names = c("True h^2", "Estimated h^2_obs, mean",
-                "95% Confidence interval",
-                "Estimated latent mean")
-)
-}
+
 report.simulated.threshold.estimate(0.5, 100, 24, 10, function(u) u,
                                     simulated.formula,10)
 
@@ -906,6 +884,8 @@ plot.A.matrix(simulated.d.ped, title.append = ", 24 generation simulation")
 
 # Song sparrow data
 plot.A.matrix(d.ped[,c("id","mother.id","father.id")], ", Song sparrow data")
+
+
 
 ```
 This is an interesting observation. First, most of the off-diagonal elements are very close to 0, indicating almost no relatedness. Secondly, not all diagonal elements are themselves 1. What does this mean?
