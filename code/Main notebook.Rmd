@@ -5,8 +5,9 @@ date: '2023-02-01'
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,tidy=TRUE,message=FALSE,warning=FALSE,strip.white=TRUE,prompt=FALSE,
-                      cache=TRUE, size="scriptsize",fig.align = "center")
+knitr::opts_chunk$set(echo = TRUE, tidy = TRUE, message = FALSE, warning = FALSE,
+                      strip.white = TRUE, prompt = FALSE, cache = TRUE,
+                      size = "scriptsize", fig.align = "center")
 ```
 
 # Acknowledgements
@@ -22,8 +23,6 @@ library(nadiv)
 library(bdsmatrix)
 library(INLA)
 library(QGglmm)
-# library(patchwork)
-# library(SMisc)
 library(ggplot2)
 library(latex2exp)
 if (!require("BiocManager", quietly = TRUE))
@@ -36,10 +35,10 @@ if (!require("MCMCglmm", quietly = TRUE))
 library("GeneticsPed") 
 library("MCMCglmm")
 
-
-qg.data.gg.inds <- read.table("../data/qg.data.gg.inds.steffi.txt", header=T)
-d.ped <- ped.prune.inds <- read.table("../data/ped.prune.inds.steffi.txt", header=T)
-d.Q <-  read.table("../data/Q.data.steffi.txt", header=T)
+qg.data.gg.inds <- read.table("../data/qg.data.gg.inds.steffi.txt", header=TRUE)
+d.ped <- ped.prune.inds <- read.table("../data/ped.prune.inds.steffi.txt",
+                                      header=TRUE)
+d.Q <-  read.table("../data/Q.data.steffi.txt", header=TRUE)
 
 qg.data.gg.inds$natalyr.id <- qg.data.gg.inds$natalyr.no
 
