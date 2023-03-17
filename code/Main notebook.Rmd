@@ -643,7 +643,7 @@ print_heritability_table(4)
 ```{r}
 simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0.8,
                                    linear.predictor = NA, simulated.formula = NA,
-                                   dichotomize = "round") {
+                                   dichotomize = "round", pc.prior=NA) {
   #' Generate pedigree, fit gaussian (INLA) model and
   #' Remark: linear.predictor should be a callable and pass (at least) u
   #'
@@ -716,7 +716,8 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0
       quantiles = quantile(heritability, probs = c(0.025, 0.5, 0.975))
     ),
     p = p,
-    simulated.response = simulated.response
+    simulated.response = simulated.response,
+    fit = simulated.fit.inla
   )
 }
 ```
@@ -729,7 +730,7 @@ threshold.scaling.param <- function(p) {
   p * (1 - p) / (dnorm(qnorm(p)))^2
 }
 
-simulated.formula <- simulated.response ~ f(id,
+simulated.formula <- simulated.response ~  f(id,
   model = "generic0",
   Cmatrix = simulated.Cmatrix,
   constr = F, # Shouldn't matter
@@ -800,6 +801,7 @@ plot.h2.deviation <- function(dichotomize = "round",
   } else {
     stop("Unrecognized scale for sigmaA.")
   }
+  pc.U.list = c(rep(10,10) %o% 10^(-3:3))
 
   deviation <- c()
   estimates <- c()
@@ -807,15 +809,34 @@ plot.h2.deviation <- function(dichotomize = "round",
   true.vals <- c()
   est.CI.u <- c()
   est.CI.l <- c()
+  iter_num <- 0
   for (sigmaA in sigmaA.list) {
     cat(">")
+    iter_num <- iter_num + 1
+    # PoC: Just base it on current sigmaA
+    # TODO use seq_along to enumerate over different lists
+    if(sigmaA < 1){
+      pc.prior <- c(1,0.05)
+    }
+    else{
+      pc.prior <- c(pc.U.list[iter_num], 0.05)
+    }
+    simulated.formula <- simulated.response ~  f(id,
+      model = "generic0",
+      Cmatrix = simulated.Cmatrix,
+      constr = F, # Shouldn't matter
+      hyper = list(
+        prec = list(initial = log(sigmaA), prior = "pc.prec", param = pc.prior) # PC priors
+      )
+    )
     result <- simulated.heritability(
       NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = sigmaA,
       linear.predictor = function(u) {
         u + rnorm(length(u))
       },
       simulated.formula = simulated.formula,
-      dichotomize = dichotomize
+      dichotomize = dichotomize,
+      pc.prior = pc.prior
     )
 
     threshold.scaled.h2 <- threshold.scaling.param(result$p) *
@@ -868,7 +889,7 @@ plot.h2.deviation <- function(dichotomize = "round",
 
 ### Plots for sigmaA in (10^-3, 10^3)
 
-simulation.res <- plot.h2.deviation(plot.fn = "round")
+simulation.res <- plot.h2.deviation(plot.fn = "round", SAVE.PLOT=F)
 simulation.res$p
 
 ### Plot for small values og sigmaA, but finer grid
@@ -927,7 +948,7 @@ hyperparameters_wrapper <- function() {
   }
 }
 
-hyperparameters_wrapper()
+# hyperparameters_wrapper()
 ```
 We want to research why this is so bad a little more. First, let's look at variances of the simulated $y_i$'s themselves.
 
@@ -984,9 +1005,26 @@ df.transformed.h2.threshold = rbind(
 
 ggplot(df.transformed.h2.threshold, aes(x = samples, fill = Model)) +
   geom_density(alpha = 0.5) +
-  ggtitle("Posterior of transformed heritability") +
+  ggtitle("Threshold model with respect to h_obs: t^2/(p(1-p))") +
   xlab("Heritability") +
   ylab("Density") +
   xlim(c(0, 0.1)) #+ scale_x_log10()
 
- ```
+```
+
+Okay, let's try to add sex covariate to linear predictor:
+
+```{r}
+# Trying some things here;)
+tmp = simulated.heritability(linear.predictor=function(u) u+rnorm(length(u)),
+                             simulated.formula = simulated.formula)
+
+paste(c("Resid", "ID"), 1/tmp$fit$summary.hyperpar$mean)
+summary(tmp$fit)
+
+
+tmp$fit$summary.fixedped0$sex = ped0$sex -1 # Binarize :)
+linear_predictor_fixedeffects <- function(u){
+  
+}
+```
