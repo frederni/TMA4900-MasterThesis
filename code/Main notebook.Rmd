@@ -669,15 +669,16 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0
     nFather = idgen * NeNc, nMother = idgen * NeNc
   )
   # Set correct format for pedigree
-  pedigree <- ped0[, c(1, 3, 2)]
-  names(pedigree) <- c("id", "dam", "sire")
+  pedigree <- ped0[, c(1, 3, 2, 5)]
+  names(pedigree) <- c("id", "dam", "sire", "sex")
 
   # Generate random breeding values
   # The following will CRASH if you don't use the patched MCMCglmm package!
-  u <- rbv(pedigree, sigmaA)
+  u <- rbv(pedigree[, c(1,2,3)], sigmaA)
 
-  simulated.d.ped <- nadiv::prepPed(pedigree)
-  simulated.Cmatrix <- nadiv::makeAinv(simulated.d.ped)$Ainv
+  simulated.d.ped <- nadiv::prepPed(pedigree,gender="sex")
+  # TODO not sure if nadiv expects binary (0,1) sex or (1,2)
+  simulated.Cmatrix <- nadiv::makeAinv(pedigree[, c(1,2,3)])$Ainv
 
   # Generating "true" y_i
 
@@ -685,11 +686,11 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0
     sigmoid.scale <- function(x) exp(x) / (exp(x) + 1)
     simulated.response <- rbinom(length(u),
       size = 1,
-      prob = sigmoid.scale(linear.predictor(u))
+      prob = sigmoid.scale(linear.predictor(u,simulated.d.ped))
     )
   } else if (dichotomize == "round") {
     # This assumes mean of \eta_i is 0
-    simulated.response <- ifelse(linear.predictor(u) <= 0, 0, 1)
+    simulated.response <- ifelse(linear.predictor(u,simulated.d.ped) <= 0, 0, 1)
   } else {
     stop(paste0(
       "Unknown dichotomization method '", dichotomize, "'. ",
@@ -779,7 +780,7 @@ report.simulated.threshold.estimate <- function(
 sigmaA704 <- 0.05
 r <- report.simulated.threshold.estimate(
   NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = sigmaA704,
-  function(u) {
+  function(u, .) {
     u + rnorm(length(u))
   },
   simulated.formula,
@@ -831,7 +832,7 @@ plot.h2.deviation <- function(dichotomize = "round",
     )
     result <- simulated.heritability(
       NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = sigmaA,
-      linear.predictor = function(u) {
+      linear.predictor = function(u,.) {
         u + rnorm(length(u))
       },
       simulated.formula = simulated.formula,
@@ -910,7 +911,7 @@ simulation.hyperparameters <- function(NeNc_list = 0.1, sigmaA_list = 0.4) {
     for (NeNc in NeNc_list) {
       simulation_results <- simulated.heritability(
         NeNc = NeNc, idgen = 100, nGen = 10, sigmaA = sigmaA_list,
-        linear.predictor = function(u) u + rnorm(length(u)),
+        linear.predictor = function(u,.) u + rnorm(length(u)),
         simulated.formula = simulated.formula
       )
       p[[paste0(NeNc)]] <- simulation_results$heritability
@@ -920,7 +921,7 @@ simulation.hyperparameters <- function(NeNc_list = 0.1, sigmaA_list = 0.4) {
     for (sigmaA in sigmaA_list) {
       simulation_results <- simulated.heritability(
         NeNc = NeNc_list, idgen = 100, nGen = 10, sigmaA = sigmaA,
-        linear.predictor = function(u) u + rnorm(length(u)),
+        linear.predictor = function(u,.) u + rnorm(length(u)),
         simulated.formula = simulated.formula
       )
       p[[paste0(sigmaA)]] <- simulation_results$heritability
@@ -1016,15 +1017,24 @@ Okay, let's try to add sex covariate to linear predictor:
 
 ```{r}
 # Trying some things here;)
-tmp = simulated.heritability(linear.predictor=function(u) u+rnorm(length(u)),
-                             simulated.formula = simulated.formula)
 
-paste(c("Resid", "ID"), 1/tmp$fit$summary.hyperpar$mean)
-summary(tmp$fit)
-
-
-tmp$fit$summary.fixedped0$sex = ped0$sex -1 # Binarize :)
-linear_predictor_fixedeffects <- function(u){
-  
+linear_predictor_fixedeffects <- function(u, simulated.d.ped){
+  out = c()
+  intercept = -0.25
+  residuals = rnorm(length(u))
+  simulated.d.ped$sex = simulated.d.ped$sex - 1
+  for(idx in seq_along(u)){
+    out = c(out,
+            intercept + 0.5 * simulated.d.ped$sex[idx] + u[idx] + residuals[idx]
+            )
+  }
+  out
 }
+
+report.simulated.threshold.estimate(
+  NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0.2,
+  linear_predictor_fixedeffects,
+  simulated.formula,
+  Vp = 0.2 + 1 # excluding fixed effects variance
+)
 ```
