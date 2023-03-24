@@ -794,7 +794,8 @@ Seems to fit generally well here. Let's quantitatively look into estiamtes for d
 ```{r}
 plot.h2.deviation <- function(dichotomize = "round",
                               title = "Simulation heritability,\ndichotomized with rounding",
-                              SAVE.PLOT = T, plot.fn = NA, sigma.scale = "log") {
+                              SAVE.PLOT = T, plot.fn = NA, sigma.scale = "log", lin.pred=NULL,
+                              dynamic.priors=F) {
   if (sigma.scale == "log") {
     sigmaA.list <- c(1:10 %o% 10^(-3:3)) # Log scale between 10^-3 to 10^3
   } else if (sigma.scale == "small") { # Linear scale between 10^-3 to 0.259
@@ -813,15 +814,21 @@ plot.h2.deviation <- function(dichotomize = "round",
   iter_num <- 0
   for (sigmaA in sigmaA.list) {
     cat(">")
-    iter_num <- iter_num + 1
-    # PoC: Just base it on current sigmaA
-    # TODO use seq_along to enumerate over different lists
-    if(sigmaA < 1){
-      pc.prior <- c(1,0.05)
+    if(dynamic.priors){
+      iter_num <- iter_num + 1
+          # PoC: Just base it on current sigmaA
+          # TODO use seq_along to enumerate over different lists
+          if(sigmaA < 1){
+            pc.prior <- c(1,0.05)
+          }
+          else{
+            pc.prior <- c(pc.U.list[iter_num], 0.05)
+          }  
     }
     else{
-      pc.prior <- c(pc.U.list[iter_num], 0.05)
+      pc.prior = c(1,0.05)
     }
+    
     simulated.formula <- simulated.response ~  f(id,
       model = "generic0",
       Cmatrix = simulated.Cmatrix,
@@ -830,11 +837,12 @@ plot.h2.deviation <- function(dichotomize = "round",
         prec = list(initial = log(sigmaA), prior = "pc.prec", param = pc.prior) # PC priors
       )
     )
+    if(is.null(lin.pred)){ # The 'usual' linear predictor
+      lin.pred = function(u, .) u+rnorm(length(u))
+    }
     result <- simulated.heritability(
       NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = sigmaA,
-      linear.predictor = function(u,.) {
-        u + rnorm(length(u))
-      },
+      linear.predictor = lin.pred,
       simulated.formula = simulated.formula,
       dichotomize = dichotomize,
       pc.prior = pc.prior
@@ -890,7 +898,7 @@ plot.h2.deviation <- function(dichotomize = "round",
 
 ### Plots for sigmaA in (10^-3, 10^3)
 
-simulation.res <- plot.h2.deviation(plot.fn = "round", SAVE.PLOT=F)
+simulation.res <- plot.h2.deviation(plot.fn = "round", SAVE.PLOT=T)
 simulation.res$p
 
 ### Plot for small values og sigmaA, but finer grid
@@ -956,7 +964,7 @@ We want to research why this is so bad a little more. First, let's look at varia
 ```{r}
 # Try to re-run with another linear predictor
 report.simulated.threshold.estimate(
-  0.5, 100, 9, 10, function(u) u,
+  0.5, 100, 9, 10, function(u,.) u,
   simulated.formula, 10
 )
 
@@ -1016,7 +1024,8 @@ ggplot(df.transformed.h2.threshold, aes(x = samples, fill = Model)) +
 Okay, let's try to add sex covariate to linear predictor:
 
 ```{r}
-# Trying some things here;)
+# For sufficiently large choice of \beta corresponding to sex,
+# we get progressively worse results as is expected.
 
 linear_predictor_fixedeffects <- function(u, simulated.d.ped){
   out = c()
@@ -1025,7 +1034,7 @@ linear_predictor_fixedeffects <- function(u, simulated.d.ped){
   simulated.d.ped$sex = simulated.d.ped$sex - 1
   for(idx in seq_along(u)){
     out = c(out,
-            intercept + 0.5 * simulated.d.ped$sex[idx] + u[idx] + residuals[idx]
+            intercept + 10 * simulated.d.ped$sex[idx] + u[idx] + residuals[idx]
             )
   }
   out
@@ -1037,4 +1046,19 @@ report.simulated.threshold.estimate(
   simulated.formula,
   Vp = 0.2 + 1 # excluding fixed effects variance
 )
+
+m = plot.h2.deviation(
+    dichotomize = "round", title = "Simulation over fixed effects",
+    SAVE.PLOT = F, plot.fn = NA, sigma.scale = "log", 
+    lin.pred=linear_predictor_fixedeffects)
+m$p
+
+```
+
+Now, let's instead try to include the fixed effect variance into the denominator of the heritability. Maybe that improves heritability?
+
+```{r}
+
+# Not yet implemented
+
 ```
