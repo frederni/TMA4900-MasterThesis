@@ -316,7 +316,7 @@ report.max.skewness <- function(posterior) {
 We can now define methods to obtain heritability on the different scales. The first function computes $h^2$ on latent scale, or using the direct transformation by including link variance in denominator. The second method is more comprehensive and uses the library `QGglmm` to obtain estimates on data scale.
 
 ```{r}
-get.h2 <- function(inla.fit, n, use.scale = F, model = NA) {
+get.h2 <- function(inla.fit, n, use.scale = F, model = NA, include.fixed=F) {
   #' Get n samples of heritability from INLA fit
   #' h^2 computed as reciprocal of precision for id, over the sum of
   #' (the reciprocal of) all random effects / hyperparameters precisions
@@ -327,6 +327,11 @@ get.h2 <- function(inla.fit, n, use.scale = F, model = NA) {
   denominator <- 0
   for (cname in colnames(samples)) {
     denominator <- denominator + 1 / samples[, cname]
+  }
+  if(include.fixed){
+    # Curerently it just takes the SD instead of sampling,
+    # didn't find an easy way to sample fixed effect estimates..
+    denominator <- denominator + sum(inla.fit$summary.fixed[, "sd"]^2)
   }
 
   if (use.scale) {
@@ -789,7 +794,7 @@ r <- report.simulated.threshold.estimate(
 r
 ```
 
-Seems to fit generally well here. Let's quantitatively look into estiamtes for different sigmaA:
+Seems to fit generally well here. Let's quantitatively look into estimates for different sigmaA:
 
 ```{r}
 plot.h2.deviation <- function(dichotomize = "round",
@@ -959,10 +964,11 @@ hyperparameters_wrapper <- function() {
 
 # hyperparameters_wrapper()
 ```
+
 We want to research why this is so bad a little more. First, let's look at variances of the simulated $y_i$'s themselves.
 
 ```{r}
-# Try to re-run with another linear predictor
+# Try to re-run with another linear predictor, similar result
 report.simulated.threshold.estimate(
   0.5, 100, 9, 10, function(u,.) u,
   simulated.formula, 10
@@ -1020,7 +1026,7 @@ ggplot(df.transformed.h2.threshold, aes(x = samples, fill = Model)) +
   xlim(c(0, 0.1)) #+ scale_x_log10()
 
 ```
-
+The observation-scale heritability actually looks very good.
 Okay, let's try to add sex covariate to linear predictor:
 
 ```{r}
@@ -1034,7 +1040,7 @@ linear_predictor_fixedeffects <- function(u, simulated.d.ped){
   simulated.d.ped$sex = simulated.d.ped$sex - 1
   for(idx in seq_along(u)){
     out = c(out,
-            intercept + 10 * simulated.d.ped$sex[idx] + u[idx] + residuals[idx]
+            intercept + 100 * simulated.d.ped$sex[idx] + u[idx] + residuals[idx]
             )
   }
   out
@@ -1059,6 +1065,10 @@ Now, let's instead try to include the fixed effect variance into the denominator
 
 ```{r}
 
-# Not yet implemented
+# Let's run that in another notebook to avoid confusion
+par(mfrow=c(1,2))
+truehist(get.h2(fit.inla.gaussian,10000,include.fixed = T),main="Fixed effects")
+truehist(get.h2(fit.inla.gaussian,10000),main="Not")
+
 
 ```
