@@ -1008,25 +1008,47 @@ How does the Threshold-transformed Gaussian heritability perform compared to the
 
 ```{r}
 # Get portion of survival in song sparrow data
-df.transformed.h2.threshold = rbind(
-  df.transformed.h2, data.frame(samples = heritability$gaussian.latent *
-                                  1/threshold.scaling.param(
-                                    mean(qg.data.gg.inds$surv.ind.to.ad)),
-                                Model = rep("Gaussian (Threshold scaled)",
-                                            length(heritability$gaussian.latent))
-                                )
-)
 
+library(reshape2) # TODO install this:)
+heritability$gaussian.liability = threshold.scaling.param(
+  mean(qg.data.gg.inds$surv.ind.to.ad)
+  ) * heritability$gaussian.latent 
 
-ggplot(df.transformed.h2.threshold, aes(x = samples, fill = Model)) +
+ggplot(
+  melt(heritability[, c("gaussian.latent", "gaussian.liability", "logit.latent", "probit.latent")]),
+  aes(x = value, fill = variable)
+  ) +
   geom_density(alpha = 0.5) +
-  ggtitle("Threshold model with respect to h_obs: t^2/(p(1-p))") +
+  ggtitle(TeX("Latent heritability density, Gaussian as $h^2_{liab}=(p(1-p))/t^2 h_{obs}^2$")) +
   xlab("Heritability") +
-  ylab("Density") +
-  xlim(c(0, 0.1)) #+ scale_x_log10()
+  ylab("Density")
 
 ```
+
 The observation-scale heritability actually looks very good.
+
+
+```{r}
+ggplot(
+  melt(heritability[, c("gaussian.latent", "logit.qgglmm", "probit.qgglmm")]),
+  aes(x = value, fill = variable)
+) +
+  geom_density(alpha = 0.5) +
+  ggtitle(TeX("Data-scale heritability (QGglmm), Gaussian directly computed $h^2$")) +
+  xlab("Heritability") +
+  ylab("Density")
+
+ggplot(
+  melt(heritability[, c("gaussian.latent", "logit.scaled", "probit.scaled")]),
+  aes(x = value, fill = variable)
+) +
+  geom_density(alpha = 0.5) +
+  ggtitle(TeX("Data-scale heritability (link variance), Gaussian directly computed $h^2$")) +
+  xlab("Heritability") +
+  ylab("Density")
+```
+
+
 Okay, let's try to add sex covariate to linear predictor:
 
 ```{r}
