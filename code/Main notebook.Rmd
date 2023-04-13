@@ -40,6 +40,17 @@ if (!require("MCMCglmm", quietly = TRUE)) {
 library("GeneticsPed")
 library("MCMCglmm")
 
+
+# Plotting libraries and settings
+library(cowplot)
+library(grid)
+library(extrafont)
+font_import(pattern = "cmunrm.ttf", prompt = F) # LaTeX font
+loadfonts(device = "pdf")
+texfont <- "CMU Serif"
+theme_set(theme(text = element_text(family = texfont)))
+
+
 qg.data.gg.inds <- read.table("../data/qg.data.gg.inds.steffi.txt",
   header = TRUE
 )
@@ -643,7 +654,7 @@ print_heritability_table(4)
 ```{r}
 simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0.8,
                                    linear.predictor = NA, simulated.formula = NA,
-                                   dichotomize = "round", pc.prior=NA) {
+                                   dichotomize = "round", pc.prior = NA, probit.model = F) {
   #' Generate pedigree, fit gaussian (INLA) model and
   #' Remark: linear.predictor should be a callable and pass (at least) u
   #'
@@ -674,11 +685,11 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0
 
   # Generate random breeding values
   # The following will CRASH if you don't use the patched MCMCglmm package!
-  u <- rbv(pedigree[, c(1,2,3)], sigmaA)
+  u <- rbv(pedigree[, c(1, 2, 3)], sigmaA)
 
-  simulated.d.ped <- nadiv::prepPed(pedigree,gender="sex")
+  simulated.d.ped <- nadiv::prepPed(pedigree, gender = "sex")
   # TODO not sure if nadiv expects binary (0,1) sex or (1,2)
-  simulated.Cmatrix <- nadiv::makeAinv(pedigree[, c(1,2,3)])$Ainv
+  simulated.Cmatrix <- nadiv::makeAinv(pedigree[, c(1, 2, 3)])$Ainv
 
   # Generating "true" y_i
 
@@ -686,11 +697,11 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0
     sigmoid.scale <- function(x) exp(x) / (exp(x) + 1)
     simulated.response <- rbinom(length(u),
       size = 1,
-      prob = sigmoid.scale(linear.predictor(u,simulated.d.ped))
+      prob = sigmoid.scale(linear.predictor(u, simulated.d.ped))
     )
   } else if (dichotomize == "round") {
     # This assumes mean of \eta_i is 0
-    simulated.response <- ifelse(linear.predictor(u,simulated.d.ped) <= 0, 0, 1)
+    simulated.response <- ifelse(linear.predictor(u, simulated.d.ped) <= 0, 0, 1)
   } else {
     stop(paste0(
       "Unknown dichotomization method '", dichotomize, "'. ",
@@ -710,6 +721,16 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0
   # Checks for error status in INLA fit,
   stopifnot(simulated.fit.inla$mode$mode.status == 0) # status != 0 is trouble
   heritability <- get.h2(simulated.fit.inla, 10000) # 10k samples should be suff
+
+  # Also fit probit if specified
+  if (probit.model) {
+    fit.probit <- inla(
+      formula = simulated.formula, family = "binomial",
+      data = simulated.d.ped
+    )
+  } else {
+    fit.probit <- NULL
+  }
   list(
     heritability = heritability,
     summary = list(
@@ -718,7 +739,8 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0
     ),
     p = p,
     simulated.response = simulated.response,
-    fit = simulated.fit.inla
+    fit = simulated.fit.inla,
+    fit.probit = fit.probit
   )
 }
 ```
@@ -791,11 +813,12 @@ r
 
 Seems to fit generally well here. Let's quantitatively look into estiamtes for different sigmaA:
 
+
 ```{r}
 plot.h2.deviation <- function(dichotomize = "round",
                               title = "Simulation heritability,\ndichotomized with rounding",
-                              SAVE.PLOT = T, plot.fn = NA, sigma.scale = "log", lin.pred=NULL,
-                              dynamic.priors=F) {
+                              SAVE.PLOT = T, plot.fn = NA, sigma.scale = "log", lin.pred = NULL,
+                              dynamic.priors = F) {
   if (sigma.scale == "log") {
     sigmaA.list <- c(1:10 %o% 10^(-3:3)) # Log scale between 10^-3 to 10^3
   } else if (sigma.scale == "small") { # Linear scale between 10^-3 to 0.259
@@ -803,7 +826,7 @@ plot.h2.deviation <- function(dichotomize = "round",
   } else {
     stop("Unrecognized scale for sigmaA.")
   }
-  pc.U.list = c(rep(10,10) %o% 10^(-3:3))
+  pc.U.list <- c(rep(10, 10) %o% 10^(-3:3))
 
   deviation <- c()
   estimates <- c()
@@ -814,21 +837,19 @@ plot.h2.deviation <- function(dichotomize = "round",
   iter_num <- 0
   for (sigmaA in sigmaA.list) {
     cat(">")
-    if(dynamic.priors){
+    if (dynamic.priors) {
       iter_num <- iter_num + 1
-          # PoC: Just base it on current sigmaA
-          # TODO use seq_along to enumerate over different lists
-          if(sigmaA < 1){
-            pc.prior <- c(1,0.05)
-          }
-          else{
-            pc.prior <- c(pc.U.list[iter_num], 0.05)
-          }  
+      # PoC: Just base it on current sigmaA
+      # TODO use seq_along to enumerate over different lists
+      if (sigmaA < 1) {
+        pc.prior <- c(1, 0.05)
+      } else {
+        pc.prior <- c(pc.U.list[iter_num], 0.05)
+      }
+    } else {
+      pc.prior <- c(1, 0.05)
     }
-    else{
-      pc.prior = c(1,0.05)
-    }
-    
+
     simulated.formula <- simulated.response ~  f(id,
       model = "generic0",
       Cmatrix = simulated.Cmatrix,
@@ -837,8 +858,8 @@ plot.h2.deviation <- function(dichotomize = "round",
         prec = list(initial = log(sigmaA), prior = "pc.prec", param = pc.prior) # PC priors
       )
     )
-    if(is.null(lin.pred)){ # The 'usual' linear predictor
-      lin.pred = function(u, .) u+rnorm(length(u))
+    if (is.null(lin.pred)) { # The 'usual' linear predictor
+      lin.pred <- function(u, .) u + rnorm(length(u))
     }
     result <- simulated.heritability(
       NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = sigmaA,
@@ -871,45 +892,54 @@ plot.h2.deviation <- function(dichotomize = "round",
   p <- ggplot(data = res, aes(x = sigmaA)) +
     geom_ribbon(aes(ymin = est.CI.l, ymax = est.CI.u), alpha = 0.1) +
     geom_line(aes(y = true.vals, color = "True h^2")) +
-    geom_line(aes(y = estimates, color = "Fitted h^2 (Threshold-scaled)")) +
-    geom_line(aes(y = latent, color = "Fitted h^2 (Latent)")) +
-    xlab(TeX("$\\sigma^2$")) +
+    geom_line(aes(y = estimates, color = "Fitted h^2 (Threshold scaled)")) +
+    geom_line(aes(y = latent, color = "Fitted h^2 (observation scale)")) +
+    xlab(TeX("$\\sigma_A^2$")) +
     ylab(TeX("$h^2$")) +
     scale_x_log10() +
     scale_color_manual(
       name = title,
       breaks = c(
-        "True h^2", "Fitted h^2 (Threshold-scaled)",
-        "Fitted h^2 (Latent)"
+        "True h^2", "Fitted h^2 (Threshold scaled)",
+        "Fitted h^2 (observation scale)"
       ),
       values = c(
-        "True h^2" = "darkred", "Fitted h^2 (Threshold-scaled)" = "steelblue",
-        "Fitted h^2 (Latent)" = "darkgreen"
+        "True h^2" = "darkred", "Fitted h^2 (Threshold scaled)" = "steelblue",
+        "Fitted h^2 (observation scale)" = "darkgreen"
       )
     )
   if (SAVE.PLOT) {
     ggsave(paste0(
       "../figures/simulation_deviance_",
       if (!is.na(plot.fn)) plot.fn, ".pdf"
-    ), p)
+    ), p + theme(legend.position = "none"), width = 20, height = 20, units = "cm")
+    # Save legend as separate plot
+    p.legend <- cowplot::get_legend(p)
+    pdf("../figures/simulation_deviance_legend.pdf", width = 7.87402, height = 7.87402)
+    grid.newpage()
+    grid.draw(p.legend)
+    dev.off()
   }
   return(list(res = res, p = p))
 }
 
 ### Plots for sigmaA in (10^-3, 10^3)
 
-simulation.res <- plot.h2.deviation(plot.fn = "round", SAVE.PLOT=T)
+simulation.res <- plot.h2.deviation(plot.fn = "round", SAVE.PLOT = T, dynamic.priors = T)
 simulation.res$p
 
 ### Plot for small values og sigmaA, but finer grid
-simulation2.res <- plot.h2.deviation(SAVE.PLOT = F, sigma.scale = "small")
+simulation2.res <- plot.h2.deviation(
+  SAVE.PLOT = T, sigma.scale = "small",
+  plot.fn = "small", dynamic.priors = T
+)
 simulation2.res$p
 
 ### Standard plotting with different dichotomization techniques
 plot.h2.deviation(
   dichotomize = "binom1.logit",
-  title = "Simulation heritability,\ndichotomized as binomial",
-  plot.fn = "binom"
+  title = "Simulation heritability",
+  plot.fn = "binom", dynamic.priors = TRUE
 )
 
 simulation.hyperparameters <- function(NeNc_list = 0.1, sigmaA_list = 0.4) {
@@ -919,7 +949,7 @@ simulation.hyperparameters <- function(NeNc_list = 0.1, sigmaA_list = 0.4) {
     for (NeNc in NeNc_list) {
       simulation_results <- simulated.heritability(
         NeNc = NeNc, idgen = 100, nGen = 10, sigmaA = sigmaA_list,
-        linear.predictor = function(u,.) u + rnorm(length(u)),
+        linear.predictor = function(u, .) u + rnorm(length(u)),
         simulated.formula = simulated.formula
       )
       p[[paste0(NeNc)]] <- simulation_results$heritability
@@ -929,7 +959,7 @@ simulation.hyperparameters <- function(NeNc_list = 0.1, sigmaA_list = 0.4) {
     for (sigmaA in sigmaA_list) {
       simulation_results <- simulated.heritability(
         NeNc = NeNc_list, idgen = 100, nGen = 10, sigmaA = sigmaA,
-        linear.predictor = function(u,.) u + rnorm(length(u)),
+        linear.predictor = function(u, .) u + rnorm(length(u)),
         simulated.formula = simulated.formula
       )
       p[[paste0(sigmaA)]] <- simulation_results$heritability
@@ -964,7 +994,7 @@ We want to research why this is so bad a little more. First, let's look at varia
 ```{r}
 # Try to re-run with another linear predictor
 report.simulated.threshold.estimate(
-  0.5, 100, 9, 10, function(u,.) u,
+  0.5, 100, 9, 10, function(u, .) u,
   simulated.formula, 10
 )
 
@@ -973,6 +1003,8 @@ report.simulated.threshold.estimate(
 plot.A.matrix <- function(pedigree, title.append = NULL) {
   A.matrix <- nadiv::makeA(pedigree)
   A.diag <- diag(A.matrix)
+  plot(A.diag)
+  return() # temp
   A.nondiag <- A.matrix
   diag(A.nondiag) <- NA
   ggplot(data = data.frame(values = A.nondiag@x)) +
@@ -992,10 +1024,10 @@ pedigree <- ped0[, c(1, 3, 2)]
 names(pedigree) <- c("id", "dam", "sire")
 simulated.d.ped <- nadiv::prepPed(pedigree)
 plot.A.matrix(simulated.d.ped, title.append = ", 24 generation simulation")
-if (SAVE.PLOT) ggsave("../figures/relatedness-offdiagonal-sim.pdf")
+if (SAVE.PLOT) ggsave("../figures/relatedness-offdiagonal-sim.pdf", width = 20, height = 20, units = "cm")
 # Song sparrow data
 plot.A.matrix(d.ped[, c("id", "mother.id", "father.id")], ", Song sparrow data")
-if (SAVE.PLOT) ggsave("../figures/relatedness-offdiagonal-songsparrow.pdf")
+if (SAVE.PLOT) ggsave("../figures/relatedness-offdiagonal-songsparrow.pdf", width = 20, height = 20, units = "cm")
 ```
 
 How does the Threshold-transformed Gaussian heritability perform compared to the posteriors for the logit and probit models?
@@ -1004,19 +1036,18 @@ How does the Threshold-transformed Gaussian heritability perform compared to the
 # Get portion of survival in song sparrow data
 
 library(reshape2) # TODO install this:)
-heritability$gaussian.liability = threshold.scaling.param(
+heritability$gaussian.liability <- threshold.scaling.param(
   mean(qg.data.gg.inds$surv.ind.to.ad)
-  ) * heritability$gaussian.latent 
+) * heritability$gaussian.latent
 
 ggplot(
-  melt(heritability[, c("gaussian.latent", "gaussian.liability", "logit.latent", "probit.latent")]),
+  melt(heritability[, c("gaussian.liability", "logit.latent", "probit.latent")]),
   aes(x = value, fill = variable)
-  ) +
+) +
   geom_density(alpha = 0.5) +
   ggtitle(TeX("Latent heritability density, Gaussian as $h^2_{liab}=(p(1-p))/t^2 h_{obs}^2$")) +
   xlab("Heritability") +
   ylab("Density")
-
 ```
 Hm, doesn't seem to work that well. Let's instead look at the data scale:
 
@@ -1039,6 +1070,46 @@ ggplot(
   xlab("Heritability") +
   ylab("Density")
 ```
+Key takeaways:
+- The Gaussian model to liability scale doesn't fit well with the other latent models.
+- The scalings from binomial latent onto data scale fit well with the Gaussian one
+
+The next step would be to look at simulation and similar scales...
+
+```{r}
+# We know the point value of true data
+# We know the posterior with and without threshold scaling
+
+# We can compute:
+# Posterior of latent heritabilities
+
+simulation.res2 <- simulated.heritability(0.5, 100, 9,
+  sigmaA = 0.5,
+  linear.predictor = function(u, .) u + rnorm(length(u)),
+  simulated.formula = simulated.formula,
+  probit.model = TRUE
+)
+heritability.sim <- data.frame(
+  gaussian = simulation.res2$heritability,
+  probit.latent = get.h2(simulation.res2$fit.probit, 10000),
+  probit.scaled = get.h2(simulation.res2$fit.probit, 10000, TRUE, "binom1.probit"),
+  probit.qgglmm = get.h2.from.qgparams(
+    simulation.res2$fit.probit, "binom1.probit",
+    10000
+  )
+)
+heritability.sim$gaussian.liability <- threshold.scaling.param(simulation.res2$p) *
+  heritability.sim$gaussian
+
+ggplot(
+  melt(heritability.sim[, c("gaussian.liability", "probit.scaled")]),
+  aes(x = value, fill = variable)
+) +
+  geom_density(alpha = 0.5) +
+  ggtitle(TeX("Data-scale heritability (QGglmm), Gaussian directly computed $h^2$")) +
+  xlab("Heritability") +
+  ylab("Density")
+```
 
 Okay, let's try to add sex covariate to linear predictor:
 
@@ -1046,15 +1117,16 @@ Okay, let's try to add sex covariate to linear predictor:
 # For sufficiently large choice of \beta corresponding to sex,
 # we get progressively worse results as is expected.
 
-linear_predictor_fixedeffects <- function(u, simulated.d.ped){
-  out = c()
-  intercept = -0.25
-  residuals = rnorm(length(u))
-  simulated.d.ped$sex = simulated.d.ped$sex - 1
-  for(idx in seq_along(u)){
-    out = c(out,
-            intercept + 10 * simulated.d.ped$sex[idx] + u[idx] + residuals[idx]
-            )
+linear_predictor_fixedeffects <- function(u, simulated.d.ped) {
+  out <- c()
+  intercept <- -0.25
+  residuals <- rnorm(length(u))
+  simulated.d.ped$sex <- simulated.d.ped$sex - 1
+  for (idx in seq_along(u)) {
+    out <- c(
+      out,
+      intercept + 10 * simulated.d.ped$sex[idx] + u[idx] + residuals[idx]
+    )
   }
   out
 }
@@ -1066,18 +1138,10 @@ report.simulated.threshold.estimate(
   Vp = 0.2 + 1 # excluding fixed effects variance
 )
 
-m = plot.h2.deviation(
-    dichotomize = "round", title = "Simulation over fixed effects",
-    SAVE.PLOT = F, plot.fn = NA, sigma.scale = "log", 
-    lin.pred=linear_predictor_fixedeffects)
+m <- plot.h2.deviation(
+  dichotomize = "round", title = "Simulation over fixed effects",
+  SAVE.PLOT = F, plot.fn = NA, sigma.scale = "log",
+  lin.pred = linear_predictor_fixedeffects
+)
 m$p
-
-```
-
-Now, let's instead try to include the fixed effect variance into the denominator of the heritability. Maybe that improves heritability?
-
-```{r}
-
-# Not yet implemented
-
 ```
