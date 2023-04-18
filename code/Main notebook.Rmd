@@ -46,9 +46,10 @@ library(cowplot)
 library(grid)
 library(extrafont)
 font_import(pattern = "cmunrm.ttf", prompt = F) # LaTeX font
-loadfonts(device = "pdf")
-texfont <- "CMU Serif"
-theme_set(theme_gray(text = element_text(family=texfont), base_size = 14))
+loadfonts(device = "win")
+texfont <- "CMU Serif" # Laptop...
+# texfont <- "CMUSerif-Roman" # For other computer...
+theme_set(theme(text = element_text(family=texfont, size=14)))
 
 
 qg.data.gg.inds <- read.table("../data/qg.data.gg.inds.steffi.txt",
@@ -481,18 +482,19 @@ ggplot(df.latent.h2, aes(x = samples, fill = Model)) +
   ggtitle("Posterior of latent scale heritability for binomial INLA models") +
   xlab("(Latent-scale) Heritability") +
   ylab("Density")
+if(SAVE.PLOT) ggsave("../figures/probit-logit-similarity.pdf")
 ```
-Generally we don't see much difference. Now we want to see how the gaussian one preforms.
+Generally we don't see much difference. Now we want to see how the gaussian one preforms. Preliminary results..
 
 ```{r scaled h2 posteriors}
 df.transformed.h2 <- data.frame(
   samples = c(
-    heritability$logit.qgglmm,
+    # heritability$logit.qgglmm,
     heritability$probit.qgglmm,
     heritability$gaussian.latent
   ),
   Model = c(
-    rep("Logit", length(heritability$logit.qgglmm)),
+    # rep("Logit", length(heritability$logit.qgglmm)),
     rep("Probit", length(heritability$probit.qgglmm)),
     rep("Gaussian (no transformation)", length(heritability$gaussian.latent))
   )
@@ -515,27 +517,16 @@ So far we've only used `QGglmm` without averaging over fixed effects. This takes
 
 We see that the 3 first provide almost exactly the same result. Thus, we don't need to average over fixed effects in this dataset.
 
-TEst
+Let's grid-plot densities. This might have to be moved later but
 
 ```{r}
-
-
-# Create a data frame with some example data
-df <- data.frame(x = rnorm(50), y = rnorm(50), group = factor(sample(1:4, 50, replace = TRUE)))
-
-# Define a custom color palette with four colors
-my_colors <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442")
-
-# Create the plot using ggplot2
-ggplot(df, aes(x = x, y = y, color = group)) +
-  geom_point(size = 3) +
-  
-  # Use the custom color palette
-  scale_color_manual(values = my_colors) +
-  
-  # Add some labels and a title
-  labs(x = "X Axis", y = "Y Axis", color = "Group") +
-  ggtitle("Scatter Plot with Custom Colors")
+p1 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.latent", "probit.latent")]), aes(x=value,fill=variable), alpha=0.5) +theme(legend.position="none")
+p2 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.liability", "probit.latent")]), aes(x=value,fill=variable), alpha=0.5) +theme(legend.position="none") 
+p3 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.latent", "probit.qgglmm")]), aes(x=value,fill=variable), alpha=0.5) +theme(legend.position="none")
+p4 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.liability", "probit.qgglmm")]), aes(x=value,fill=variable), alpha=0.5) +theme(legend.position="none")
+p5 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.latent", "probit.scaled")]), aes(x=value,fill=variable), alpha=0.5) +theme(legend.position="none")
+p6 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.liability", "probit.scaled")]), aes(x=value,fill=variable), alpha=0.5) +theme(legend.position="none")
+plot_grid(p1,p2,p3,p4,p5,p6)
 
 ```
 
