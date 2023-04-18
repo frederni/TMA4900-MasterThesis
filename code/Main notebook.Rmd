@@ -520,13 +520,29 @@ We see that the 3 first provide almost exactly the same result. Thus, we don't n
 Let's grid-plot densities. This might have to be moved later but
 
 ```{r}
-p1 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.latent", "probit.latent")]), aes(x=value,fill=variable), alpha=0.5) +theme(legend.position="none")
-p2 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.liability", "probit.latent")]), aes(x=value,fill=variable), alpha=0.5) +theme(legend.position="none") 
-p3 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.latent", "probit.qgglmm")]), aes(x=value,fill=variable), alpha=0.5) +theme(legend.position="none")
-p4 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.liability", "probit.qgglmm")]), aes(x=value,fill=variable), alpha=0.5) +theme(legend.position="none")
-p5 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.latent", "probit.scaled")]), aes(x=value,fill=variable), alpha=0.5) +theme(legend.position="none")
-p6 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.liability", "probit.scaled")]), aes(x=value,fill=variable), alpha=0.5) +theme(legend.position="none")
-plot_grid(p1,p2,p3,p4,p5,p6)
+# TODO: If time, consider working around facet_wrap instead, as it's more readable
+p1 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.latent", "probit.latent")]), aes(x=value,fill=variable), alpha=0.5) +
+  theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{G,obs}$ vs. $h^2_{B,L}$"))
+p2 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.liability", "probit.latent")]), aes(x=value,fill=variable), alpha=0.5) +
+  theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{G,liab}$ vs. $h^2_{B,L}$"))
+p3 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.latent", "probit.qgglmm")]), aes(x=value,fill=variable), alpha=0.5) +
+  theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{G,obs}$ vs. $h^2_{B,\\Psi}$"))
+p4 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.liability", "probit.qgglmm")]), aes(x=value,fill=variable), alpha=0.5) +
+  theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{G,liab}$ vs. $h^2_{B,\\Psi}$"))
+p5 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.latent", "probit.scaled")]), aes(x=value,fill=variable), alpha=0.5) +
+  theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{G,obs}$ vs. $h^2_{B,\\Phi}$"))
+p6 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.liability", "probit.scaled")]), aes(x=value,fill=variable), alpha=0.5) +
+  theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{G,liab}$ vs. $h^2_{B,\\Phi}$"))
+
+plot_grid(p1,p3,p5,p2,p4,p6,ggplot()+theme_void(),
+          get_legend(
+            ggplot(data.frame(v=c("Gaussian","Probit"),x=c(0,0))) + 
+              geom_density(aes(x=x,fill=v),alpha=0.5) +
+              scale_fill_discrete(breaks=c("Gaussian", "Probit")) +
+              theme(legend.title=element_blank())
+          )
+)
+if(SAVE.PLOT) ggsave("../figures/application_gaussian_vs_binom.pdf")
 
 ```
 
@@ -921,21 +937,21 @@ plot.h2.deviation <- function(dichotomize = "round",
   # Plotting
   p <- ggplot(data = res, aes(x = sigmaA)) +
     geom_ribbon(aes(ymin = est.CI.l, ymax = est.CI.u), alpha = 0.1) +
-    geom_line(aes(y = true.vals, color = "True h^2")) +
-    geom_line(aes(y = estimates, color = "Fitted h^2 (Threshold scaled)")) +
-    geom_line(aes(y = latent, color = "Fitted h^2 (observation scale)")) +
+    geom_line(aes(y = true.vals, color = "True")) +
+    geom_line(aes(y = estimates, color = "Fitted (Threshold scaled)")) +
+    geom_line(aes(y = latent, color = "Fitted (observation scale)")) +
     xlab(TeX("$\\sigma_A^2$")) +
     ylab(TeX("$h^2$")) +
     scale_x_log10() +
     scale_color_manual(
       name = title,
       breaks = c(
-        "True h^2", "Fitted h^2 (Threshold scaled)",
-        "Fitted h^2 (observation scale)"
+        "True", "Fitted (Threshold scaled)",
+        "Fitted (observation scale)"
       ),
       values = c(
-        "True h^2" = "darkred", "Fitted h^2 (Threshold scaled)" = "steelblue",
-        "Fitted h^2 (observation scale)" = "darkgreen"
+        "True" = "darkred", "Fitted (Threshold scaled)" = "steelblue",
+        "Fitted (observation scale)" = "darkgreen"
       )
     )
   if (SAVE.PLOT) {
@@ -1035,7 +1051,6 @@ plot.A.matrix <- function(pedigree, title.append = NULL) {
   A.matrix <- nadiv::makeA(pedigree)
   A.diag <- diag(A.matrix)
   plot(A.diag)
-  return() # temp
   A.nondiag <- A.matrix
   diag(A.nondiag) <- NA
   ggplot(data = data.frame(values = A.nondiag@x)) +
