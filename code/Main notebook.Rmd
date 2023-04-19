@@ -522,17 +522,17 @@ Let's grid-plot densities. This might have to be moved later but
 ```{r}
 # TODO: If time, consider working around facet_wrap instead, as it's more readable
 p1 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.latent", "probit.latent")]), aes(x=value,fill=variable), alpha=0.5) +
-  theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{G,obs}$ vs. $h^2_{B,L}$"))
+  theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{obs}$ vs. $h^2_{lat}$"))
 p2 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.liability", "probit.latent")]), aes(x=value,fill=variable), alpha=0.5) +
-  theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{G,liab}$ vs. $h^2_{B,L}$"))
+  theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{liab}$ vs. $h^2_{lat}$"))
 p3 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.latent", "probit.qgglmm")]), aes(x=value,fill=variable), alpha=0.5) +
-  theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{G,obs}$ vs. $h^2_{B,\\Psi}$"))
+  theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{obs}$ vs. $h^2_{\\Psi}$"))
 p4 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.liability", "probit.qgglmm")]), aes(x=value,fill=variable), alpha=0.5) +
-  theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{G,liab}$ vs. $h^2_{B,\\Psi}$"))
+  theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{liab}$ vs. $h^2_{\\Psi}$"))
 p5 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.latent", "probit.scaled")]), aes(x=value,fill=variable), alpha=0.5) +
-  theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{G,obs}$ vs. $h^2_{B,\\Phi}$"))
+  theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{obs}$ vs. $h^2_{\\Phi}$"))
 p6 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.liability", "probit.scaled")]), aes(x=value,fill=variable), alpha=0.5) +
-  theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{G,liab}$ vs. $h^2_{B,\\Phi}$"))
+  theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{liab}$ vs. $h^2_{\\Phi}$"))
 
 plot_grid(p1,p3,p5,p2,p4,p6,ggplot()+theme_void(),
           get_legend(
