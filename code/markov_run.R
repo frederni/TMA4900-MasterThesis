@@ -183,7 +183,7 @@ new.h2.transf <- function(fit, modelname, nsamples, marginal.mode=NA){
   posterior
 }
 
-compute.observation.h2.SSH <- function(fit, nsamples, modelname){
+compute.observation.h2.SSH <- function(fit, nsamples, modelname, fn.prepend=""){
   cat("Called function at:", format(Sys.time(), "%a %b %d %X %Y"), "\n")
   t0 = Sys.time()
   latent.heritability = get.h2(fit, nsamples)
@@ -206,12 +206,13 @@ compute.observation.h2.SSH <- function(fit, nsamples, modelname){
   cat("Saving to disk...\n")
   save(latent.heritability, scaled.heritability, heritability_averaged,
        heritability_frequentist_avged, heritability_notavged,
-       file=paste0("heritabilities_SSH_", modelname, ".Rdata"))
+       file=paste0(fn.prepend, "heritabilities_SSH_", modelname, ".Rdata"))
   return(0)
 }
 
-compute.observation.h2.SSH(fit.inla.logit,  10000, "binom1.logit")
+# compute.observation.h2.SSH(fit.inla.logit,  10000, "binom1.logit")
 compute.observation.h2.SSH(fit.inla.probit, 10000, "binom1.probit")
+compute.observation.h2.SSH(simulation.res2$fit.probit, 10000, "binom1.probit", fn.prepend="simulation_")
 
 
 
