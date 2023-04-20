@@ -48,7 +48,7 @@ font_import(pattern = "cmunrm.ttf", prompt = F) # LaTeX font
 loadfonts(device = "win")
 texfont <- "CMU Serif" # Laptop...
 # texfont <- "CMUSerif-Roman" # For other computer...
-theme_set(theme(text = element_text(family=texfont, size=14)))
+theme_set(theme(text = element_text(family = texfont, size = 14)))
 
 # Dataset import
 qg.data.gg.inds <- read.table("../data/qg.data.gg.inds.steffi.txt",
@@ -327,7 +327,7 @@ report.max.skewness <- function(posterior) {
 We can now define methods to obtain heritability on the different scales. The first function computes $h^2$ on latent scale, or using the direct transformation by including link variance in denominator. The second method is more comprehensive and uses the library `QGglmm` to obtain estimates on data scale.
 
 ```{r}
-get.h2 <- function(inla.fit, n, use.scale = F, model = NA, include.fixed=F) {
+get.h2 <- function(inla.fit, n, use.scale = F, model = NA, include.fixed = F) {
   #' Get n samples of heritability from INLA fit
   #' h^2 computed as reciprocal of precision for id, over the sum of
   #' (the reciprocal of) all random effects / hyperparameters precisions
@@ -339,7 +339,7 @@ get.h2 <- function(inla.fit, n, use.scale = F, model = NA, include.fixed=F) {
   for (cname in colnames(samples)) {
     denominator <- denominator + 1 / samples[, cname]
   }
-  if(include.fixed){
+  if (include.fixed) {
     # Curerently it just takes the SD instead of sampling,
     # didn't find an easy way to sample fixed effect estimates..
     denominator <- denominator + sum(inla.fit$summary.fixed[, "sd"]^2)
@@ -481,7 +481,7 @@ ggplot(df.latent.h2, aes(x = samples, fill = Model)) +
   ggtitle("Posterior of latent scale heritability for binomial INLA models") +
   xlab("(Latent-scale) Heritability") +
   ylab("Density")
-if(SAVE.PLOT) ggsave("../figures/probit-logit-similarity.pdf")
+if (SAVE.PLOT) ggsave("../figures/probit-logit-similarity.pdf")
 ```
 Generally we don't see much difference. Now we want to see how the gaussian one preforms. Preliminary results..
 
@@ -518,9 +518,8 @@ We see that the 3 first provide almost exactly the same result. Thus, we don't n
 
 
 ```{r qgparam setting exploration}
+compute.probit.transforms <- function(df.latent.h2) {
 
-compute.probit.transforms <-function(df.latent.h2){
-  
 }
 
 ## analyze things ran on markov
@@ -543,15 +542,18 @@ plot.markov.result <- function(rdata.file, ssh.samples, plot.title = NA, saveplo
   color_palette <- c("#FFA600", "#FA2A00", "#7C43A6", "#0096FF")
   p <- ggplot(df, aes(x = Heritability, fill = Method)) +
     geom_density(alpha = 0.5) +
-    ylab("Density") + scale_x_log10() +
-    scale_fill_manual(values=color_palette,
-                      labels=c(
-                        expression(h[Phi]^2),
-                        expression(h[Psi]^2 * ", Bayesian"),
-                        expression(h[Psi]^2 * ", Frequentist"),
-                        expression(h[Psi]^2 * ", No averaging")
-                      )) +
-    theme(legend.text.align=0)
+    ylab("Density") +
+    scale_x_log10() +
+    scale_fill_manual(
+      values = color_palette,
+      labels = c(
+        expression(h[Phi]^2),
+        expression(h[Psi]^2 * ", Bayesian"),
+        expression(h[Psi]^2 * ", Frequentist"),
+        expression(h[Psi]^2 * ", No averaging")
+      )
+    ) +
+    theme(legend.text.align = 0)
   if (!is.na(plot.title)) p <- p + labs(title = plot.title)
   if (saveplot) {
     ggsave(
@@ -616,7 +618,6 @@ oldPlottingHeritability <- function() {
     xlab = expression(h[obs]^2)
   )
 }
-
 ```
 
 
@@ -752,7 +753,7 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0
   if (probit.model) {
     fit.probit <- inla(
       formula = simulated.formula, family = "binomial",
-      data = simulated.d.ped, control.compute = list(return.marginals.predictor=T)
+      data = simulated.d.ped, control.compute = list(return.marginals.predictor = T)
     )
   } else {
     fit.probit <- NULL
@@ -1143,41 +1144,54 @@ First, we look at application study. Let's grid-plot densities.
 
 ```{r}
 # TODO: If time, consider working around facet_wrap instead, as it's more readable
-plot_grid_of_heritability <- function(heritability, SAVE.PLOT, plot.fn, colorscheme=NA){
-  p1 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian", "probit.latent")]), aes(x=value,fill=variable), alpha=0.5) +
-    theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{obs}$ vs. $h^2_{lat}$")) +
-    if(!is.na(colorscheme)) scale_fill_brewer(palette=colorscheme)
-  p2 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.liability", "probit.latent")]), aes(x=value,fill=variable), alpha=0.5) +
-    theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{liab}$ vs. $h^2_{lat}$"))+
-    if(!is.na(colorscheme)) scale_fill_brewer(palette=colorscheme)
-  p3 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian", "probit.qgglmm")]), aes(x=value,fill=variable), alpha=0.5) +
-    theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{obs}$ vs. $h^2_{\\Psi}$"))+
-    if(!is.na(colorscheme)) scale_fill_brewer(palette=colorscheme)
-  p4 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.liability", "probit.qgglmm")]), aes(x=value,fill=variable), alpha=0.5) +
-    theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{liab}$ vs. $h^2_{\\Psi}$"))+
-    if(!is.na(colorscheme)) scale_fill_brewer(palette=colorscheme)
-  p5 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian", "probit.scaled")]), aes(x=value,fill=variable), alpha=0.5) +
-    theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{obs}$ vs. $h^2_{\\Phi}$"))+
-    if(!is.na(colorscheme)) scale_fill_brewer(palette=colorscheme)
-  p6 <- ggplot() + geom_density(data=melt(heritability[, c("gaussian.liability", "probit.scaled")]), aes(x=value,fill=variable), alpha=0.5) +
-    theme(legend.position="none",axis.title=element_blank()) +labs(title=TeX("$h^2_{liab}$ vs. $h^2_{\\Phi}$"))+
-    if(!is.na(colorscheme)) scale_fill_brewer(palette=colorscheme)
-  p <- plot_grid(p1,p3,p5,p2,p4,p6,ggplot()+theme_void(),
-            get_legend(
-              ggplot(data.frame(v=c("Gaussian","Probit"),x=c(0,0))) + 
-                geom_density(aes(x=x,fill=v),alpha=0.5) +
-                scale_fill_discrete(breaks=c("Gaussian", "Probit")) +  
-                theme(legend.title=element_blank()) +
-                if(!is.na(colorscheme)) scale_fill_brewer(palette=colorscheme)
-            )
+plot_grid_of_heritability <- function(heritability, SAVE.PLOT, plot.fn, colorscheme = NA) {
+  p1 <- ggplot() +
+    geom_density(data = melt(heritability[, c("gaussian", "probit.latent")]), aes(x = value, fill = variable), alpha = 0.5) +
+    theme(legend.position = "none", axis.title = element_blank()) +
+    labs(title = TeX("$h^2_{obs}$ vs. $h^2_{lat}$")) +
+    if (!is.na(colorscheme)) scale_fill_brewer(palette = colorscheme)
+  p2 <- ggplot() +
+    geom_density(data = melt(heritability[, c("gaussian.liability", "probit.latent")]), aes(x = value, fill = variable), alpha = 0.5) +
+    theme(legend.position = "none", axis.title = element_blank()) +
+    labs(title = TeX("$h^2_{liab}$ vs. $h^2_{lat}$")) +
+    if (!is.na(colorscheme)) scale_fill_brewer(palette = colorscheme)
+  p3 <- ggplot() +
+    geom_density(data = melt(heritability[, c("gaussian", "probit.qgglmm")]), aes(x = value, fill = variable), alpha = 0.5) +
+    theme(legend.position = "none", axis.title = element_blank()) +
+    labs(title = TeX("$h^2_{obs}$ vs. $h^2_{\\Psi}$")) +
+    if (!is.na(colorscheme)) scale_fill_brewer(palette = colorscheme)
+  p4 <- ggplot() +
+    geom_density(data = melt(heritability[, c("gaussian.liability", "probit.qgglmm")]), aes(x = value, fill = variable), alpha = 0.5) +
+    theme(legend.position = "none", axis.title = element_blank()) +
+    labs(title = TeX("$h^2_{liab}$ vs. $h^2_{\\Psi}$")) +
+    if (!is.na(colorscheme)) scale_fill_brewer(palette = colorscheme)
+  p5 <- ggplot() +
+    geom_density(data = melt(heritability[, c("gaussian", "probit.scaled")]), aes(x = value, fill = variable), alpha = 0.5) +
+    theme(legend.position = "none", axis.title = element_blank()) +
+    labs(title = TeX("$h^2_{obs}$ vs. $h^2_{\\Phi}$")) +
+    if (!is.na(colorscheme)) scale_fill_brewer(palette = colorscheme)
+  p6 <- ggplot() +
+    geom_density(data = melt(heritability[, c("gaussian.liability", "probit.scaled")]), aes(x = value, fill = variable), alpha = 0.5) +
+    theme(legend.position = "none", axis.title = element_blank()) +
+    labs(title = TeX("$h^2_{liab}$ vs. $h^2_{\\Phi}$")) +
+    if (!is.na(colorscheme)) scale_fill_brewer(palette = colorscheme)
+  p <- plot_grid(
+    p1, p3, p5, p2, p4, p6, ggplot() +
+      theme_void(),
+    get_legend(
+      ggplot(data.frame(v = c("Gaussian", "Probit"), x = c(0, 0))) +
+        geom_density(aes(x = x, fill = v), alpha = 0.5) +
+        scale_fill_discrete(breaks = c("Gaussian", "Probit")) +
+        theme(legend.title = element_blank()) +
+        if (!is.na(colorscheme)) scale_fill_brewer(palette = colorscheme)
+    )
   )
-  if(SAVE.PLOT) ggsave(paste0("../figures/", plot.fn), p)
+  if (SAVE.PLOT) ggsave(paste0("../figures/", plot.fn), p)
   p
 }
 plot_grid_of_heritability(heritability, TRUE, "application_gaussian_vs_binom.pdf")
 # For simulation:
-plot_grid_of_heritability(heritability.sim, TRUE, "simulation_gaussian_vs_binom.pdf",'Accent')
-
+plot_grid_of_heritability(heritability.sim, TRUE, "simulation_gaussian_vs_binom.pdf", "Accent")
 ```
 
 
@@ -1188,16 +1202,17 @@ Okay, let's try to add sex covariate to linear predictor:
 # we get progressively worse results as is expected.
 
 
-linear_predictor_fixedeffects <- function(u, simulated.d.ped){
-  out = c()
-  intercept = -0.25
-  residuals = rnorm(length(u))
-  simulated.d.ped$sex = simulated.d.ped$sex - 1
-  for(idx in seq_along(u)){
-    out = c(out,
-            intercept + 100 * simulated.d.ped$sex[idx] + u[idx] + residuals[idx]
-            )
-    }
+linear_predictor_fixedeffects <- function(u, simulated.d.ped) {
+  out <- c()
+  intercept <- -0.25
+  residuals <- rnorm(length(u))
+  simulated.d.ped$sex <- simulated.d.ped$sex - 1
+  for (idx in seq_along(u)) {
+    out <- c(
+      out,
+      intercept + 100 * simulated.d.ped$sex[idx] + u[idx] + residuals[idx]
+    )
+  }
   out
 }
 
