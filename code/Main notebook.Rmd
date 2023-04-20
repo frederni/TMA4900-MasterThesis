@@ -162,7 +162,7 @@ fit.inla.gaussian <- inla(
 )
 
 data.frame(
-  Gaussian = fit.inla.gaussian$dic$dic, Logit = fit.inla.logit$dic$dic,
+  Gaussian = fit.inla.gaussian$dic$dic, #Logit = fit.inla.logit$dic$dic,
   Probit = fit.inla.probit$dic$dic, row.names = "Deviance Information Criteria"
 )
 ```
