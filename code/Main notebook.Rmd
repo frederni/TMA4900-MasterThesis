@@ -565,23 +565,23 @@ plot.markov.result <- function(rdata.file, ssh.samples, plot.title = NA, saveplo
   }
   p
 }
-plot.markov.result("heritabilities_SSH_binom1.probit.Rdata", 10000,
+plot.markov.result("../data/heritabilities_SSH_binom1.probit.Rdata", 10000,
   plot.title = "Transformations for probit model", saveplot = T
 )
 
-plot.markov.result("simulation_heritabilities_SSH_binom1.probit.Rdata", 10000,
+plot.markov.result("../data/simulation_heritabilities_SSH_binom1.probit.Rdata", 10000,
   plot.title = "Simulation: Transformations for probit model", saveplot = T
 )
 
 # Currently not using logit model
-# plot.markov.result("heritabilities_SSH_binom1.logit.Rdata", 10000,
+# plot.markov.result("../data/heritabilities_SSH_binom1.logit.Rdata", 10000,
 #   plot.title = "Heritability for Logit model", saveplot = F
 # )
 
 oldPlottingHeritability <- function() {
   #' Wrapper for old code
   par(mfrow = c(2, 2))
-  load("heritabilities_SSH_binom1.logit.Rdata")
+  load("../data/heritabilities_SSH_binom1.logit.Rdata")
   truehist(heritability_averaged$h2.obs,
     main = "Bayesian",
     xlab = expression(h[obs]^2)
@@ -598,7 +598,7 @@ oldPlottingHeritability <- function() {
     main = "Direct scaling",
     xlab = expression(h[obs]^2)
   )
-  load("heritabilities_SSH_binom1.probit.Rdata")
+  load("../data/heritabilities_SSH_binom1.probit.Rdata")
   truehist(heritability_averaged$h2.obs,
     main = "Bayesian",
     xlab = expression(h[obs]^2)

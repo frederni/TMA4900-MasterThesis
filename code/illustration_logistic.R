@@ -10,3 +10,4 @@ p2 <- ggplot(mtcars, aes(x=hp, y=vs)) +
   stat_smooth(method="lm", se=F) + ggtitle("Linear regression")
 
 grid.arrange(p1, p2, ncol=2)
+ggsave("../figures/linear-vs-logistic-example.pdf")
