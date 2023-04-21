@@ -2,7 +2,7 @@
 master.Rproj
 .lintr
 .gitignore.bak
-code/inla.model/ # Persistant inla results and logs
+/code/inla.model/* # Persistant inla results and logs
 
 # History files
 .Rhistory
