@@ -1,0 +1,48 @@
+---
+title: "poc-mcmcglmm-bug"
+output:
+  pdf_document:
+    keep_tex: yes
+date: "2023-04-14"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# How the bug arises
+
+The function `rbv` generates random breeding values based on a pedigree. The pedigree must either be a data frame with columns *it, dam, sire*, or a `phylo` object. The issue arises when using GeneticsPed to generate the pedigree, since this returns a multi-class object rather than just one single object.
+
+
+# Minimal viable product to reproduce issue
+```{r}
+library(GeneticsPed)
+library(MCMCglmm)
+ped0 <- generatePedigree(nId = 100, nGeneration = 9, 
+                         nFather = 50, nMother = 50)
+pedigree <- ped0[ , c(1,3,2)]
+names(pedigree) <- c("id", "dam", "sire")
+attr(pedigree, "class") # 2-length
+```
+Trying to use rbv will end in error
+```{r eval=F}
+u <- rbv(pedigree, 0.4)
+```
+The error code is
+```
+Error in if (attr(pedigree, "class") == "phylo") { : 
+  the condition has length > 1
+```
+
+# Patching the issue
+The only line required to change, is in `rbv.R`, and is the fifth line. Simply change it from
+
+```
+if(attr(pedigree, "class")=="phylo"){ped=FALSE}
+```
+and change it to:
+```
+if(any(attr(pedigree, "class")=="phylo)){pred=FALSE}
+```
+Then, rebuild the modified package. A patched tarball file is available on Github [here](https://github.com/frederni/TMA4900-MasterThesis/blob/main/MCMCglmm-rbv-patch.tar.gz) 
