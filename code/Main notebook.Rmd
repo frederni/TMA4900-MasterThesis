@@ -148,12 +148,6 @@ fit.inla.probit <- inla(
   control.family = list(link = "probit"),
 )
 
-# fit.inla.logit <- inla(
-#   formula = formula.inla.scaled, family = "binomial",
-#   data = qg.data.gg.inds,
-#   control.compute = list(dic = T, return.marginals.predictor = T),
-#   control.family = list(link = "logit"),
-# )
 
 fit.inla.gaussian <- inla(
   formula = formula.inla.scaled, family = "gaussian",
@@ -162,7 +156,7 @@ fit.inla.gaussian <- inla(
 )
 
 data.frame(
-  Gaussian = fit.inla.gaussian$dic$dic, #Logit = fit.inla.logit$dic$dic,
+  Gaussian = fit.inla.gaussian$dic$dic,
   Probit = fit.inla.probit$dic$dic, row.names = "Deviance Information Criteria"
 )
 ```
@@ -210,32 +204,8 @@ ggplot(
 if (SAVE.PLOT) ggsave("../figures/PIT-over-fitted.pdf")
 
 
-# <Plot 3> Mean linear predictor of different models, showing
-# --------    how different predictors for the models are. Not in use.
-plot.inla.linear.predictors <- function() {
-  par(mfrow = c(1, 3))
-  plot(fit.inla.logit$summary.linear.predictor[, 1],
-    fit.inla.probit$summary.linear.predictor[, 1],
-    main = "\nLogit (x) versus Probit (y)", xlab = "", ylab = ""
-  )
-  abline(0, 1)
-  plot(fit.inla.gaussian$summary.linear.predictor[, 1],
-    fit.inla.probit$summary.linear.predictor[, 1],
-    main = "\nGaussian (x) versus Probit (y)", xlab = "", ylab = ""
-  )
-  abline(0, 1)
-  plot(fit.inla.gaussian$summary.linear.predictor[, 1],
-    fit.inla.logit$summary.linear.predictor[, 1],
-    main = "\nGaussian (x) versus Probit (y)", xlab = "", ylab = ""
-  )
-  abline(0, 1)
-  mtext("Mean linear predictor of the different models",
-    side = 3, line = -1, outer = TRUE
-  )
-}
 
-
-# <Plot 4> Plot of 'residuals', i.e. difference in true data and the
+# <Plot 3> Plot of 'residuals', i.e. difference in true data and the
 # --------    mean of the fitted values
 df.resid <- qg.data.gg.inds$surv.ind.to.ad -
   fit.inla.gaussian$summary.fitted.values
@@ -444,15 +414,6 @@ Now we compute the heritability on the different scales.
 n.samples <- 10000
 heritability <- data.frame(gaussian = get.h2(fit.inla.gaussian, n.samples))
 
-heritability$logit.latent <- get.h2(fit.inla.logit, n.samples)
-heritability$logit.scaled <- get.h2(fit.inla.logit, n.samples,
-  use.scale = T,
-  model = "binom1.logit"
-)
-heritability$logit.qgglmm <- get.h2.from.qgparams(
-  fit.inla.logit,
-  "binom1.logit", n.samples
-)
 
 heritability$probit.latent <- get.h2(fit.inla.probit, n.samples)
 heritability$probit.scaled <- get.h2(fit.inla.probit, n.samples,
@@ -465,35 +426,16 @@ heritability$probit.qgglmm <- get.h2.from.qgparams(
 )
 ```
 
-Plotting some histograms, first the latent scale for the different binomial link functions.
 
-```{r latent h2 for binomials}
-df.latent.h2 <- data.frame(
-  samples = c(heritability$logit.latent, heritability$probit.latent),
-  Model = c(
-    rep("Logit", length(heritability$logit.latent)),
-    rep("Probit", length(heritability$probit.latent))
-  )
-)
-
-ggplot(df.latent.h2, aes(x = samples, fill = Model)) +
-  geom_density(alpha = 0.5) +
-  ggtitle("Posterior of latent scale heritability for binomial INLA models") +
-  xlab("(Latent-scale) Heritability") +
-  ylab("Density")
-if (SAVE.PLOT) ggsave("../figures/probit-logit-similarity.pdf")
-```
-Generally we don't see much difference. Now we want to see how the gaussian one preforms. Preliminary results..
+We want to see how the Gaussian one preforms.
 
 ```{r scaled h2 posteriors}
 df.transformed.h2 <- data.frame(
   samples = c(
-    # heritability$logit.qgglmm,
     heritability$probit.qgglmm,
     heritability$gaussian
   ),
   Model = c(
-    # rep("Logit", length(heritability$logit.qgglmm)),
     rep("Probit", length(heritability$probit.qgglmm)),
     rep("Gaussian (no transformation)", length(heritability$gaussian))
   )
@@ -518,11 +460,8 @@ We see that the 3 first provide almost exactly the same result. Thus, we don't n
 
 
 ```{r qgparam setting exploration}
-compute.probit.transforms <- function(df.latent.h2) {
 
-}
-
-## analyze things ran on markov
+## Analyze things ran on Markov server
 plot.markov.result <- function(rdata.file, ssh.samples, plot.title = NA, saveplot = F) {
   load(rdata.file)
   df <- data.frame(
@@ -646,27 +585,24 @@ print_heritability_table <- function(digits) {
   header <- paste(
     "% TABLE FROM R:", format(Sys.time(), "%a %b %d %X %Y"), "\n",
     "\\begin{table}[ht]\\centering\n",
-    "\\begin{tabularx}{\\textwidth}{lXXX}\n",
+    "\\begin{tabularx}{\\textwidth}{lXX}\n",
     "\\hline\n",
-    " & Binomial logit & Binomial probit & Gaussian  \\\\ \n",
+    " & Binomial probit & Gaussian  \\\\ \n",
     "\\hline \n"
   )
   main <- paste(
-    "Latent &", print_one_metric(heritability, "logit.latent", digits),
-    "&", print_one_metric(heritability, "probit.latent", digits),
+    "Latent &", print_one_metric(heritability, "probit.latent", digits),
     "&", print_one_metric(heritability, "gaussian", digits),
     "\\\\ \n",
-    "Scaled &", print_one_metric(heritability, "logit.scaled", digits),
-    "&", print_one_metric(heritability, "probit.scaled", digits),
+    "Scaled &", print_one_metric(heritability, "probit.scaled", digits),
     "& --",
     "\\\\ \n",
-    "QGglmm &", print_one_metric(heritability, "logit.qgglmm", digits),
-    "&", print_one_metric(heritability, "probit.qgglmm", digits),
+    "QGglmm &", print_one_metric(heritability, "probit.qgglmm", digits),
     "& -- \n"
   )
   footer <- paste("\\end{tabularx}",
     "\\caption{<Insert caption>}",
-    "\\label{tab:heritabily gutta}",
+    "\\label{tab:heritabily means}",
     "\\end{table}",
     sep = "\n"
   )
@@ -838,7 +774,7 @@ r <- report.simulated.threshold.estimate(
 r
 ```
 
-Seems to fit generally well here. Let's quantitatively look into estimates for different sigmaA:
+Seems to fit generally well here. Let's quantitatively look into estimates for different $\sigma^2_A$:
 
 
 ```{r}
@@ -1017,7 +953,7 @@ hyperparameters_wrapper <- function() {
 # hyperparameters_wrapper()
 ```
 
-We want to research why this is so bad a little more. First, let's look at variances of the simulated $y_i$'s themselves.
+First, rerun with $\eta_i=a_i$, i.e. without residuals on underlying scale. Similar results.
 
 ```{r}
 # Try to re-run with another linear predictor, similar result
@@ -1025,9 +961,10 @@ report.simulated.threshold.estimate(
   0.5, 100, 9, 10, function(u, .) u,
   simulated.formula, 10
 )
+```
 
-
-# Now we want to look into how A (relatedness matrix) looks like..
+Now we want to look into how A (relatedness matrix) looks like.
+```{r}
 plot.A.matrix <- function(pedigree, title.append = NULL) {
   A.matrix <- nadiv::makeA(pedigree)
   A.diag <- diag(A.matrix)
@@ -1057,18 +994,18 @@ plot.A.matrix(d.ped[, c("id", "mother.id", "father.id")], ", Song sparrow data")
 if (SAVE.PLOT) ggsave("../figures/relatedness-offdiagonal-songsparrow.pdf", width = 20, height = 20, units = "cm")
 ```
 
-How does the Threshold-transformed Gaussian heritability perform compared to the posteriors for the logit and probit models?
+How does the Threshold-transformed Gaussian heritability perform compared to the posteriors for the probit model?
 
 ```{r}
 # Get portion of survival in song sparrow data
 
-library(reshape2) # TODO install this:)
+
 heritability$gaussian.liability <- threshold.scaling.param(
   mean(qg.data.gg.inds$surv.ind.to.ad)
 ) * heritability$gaussian
 
 ggplot(
-  melt(heritability[, c("gaussian.liability", "logit.latent", "probit.latent")]),
+  melt(heritability[, c("gaussian.liability", "probit.latent")]),
   aes(x = value, fill = variable)
 ) +
   geom_density(alpha = 0.5) +
@@ -1099,6 +1036,7 @@ ggplot(
   xlab("Heritability") +
   ylab("Density")
 ```
+
 Key takeaways:
 - The Gaussian model to liability scale doesn't fit well with the other latent models.
 - The scalings from binomial latent onto data scale fit well with the Gaussian one

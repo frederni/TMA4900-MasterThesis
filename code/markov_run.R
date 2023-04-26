@@ -59,12 +59,12 @@ fit.inla.probit = inla(formula=formula.inla.scaled, family="binomial",
                        control.family = list(link = "probit"),
 )
 
-fit.inla.logit = inla(formula=formula.inla.scaled, family="binomial",
-                      data=qg.data.gg.inds,
-                      control.compute=list(dic=T, return.marginals.predictor=T),
-                      control.family = list(link = "logit"),
-                      control.predictor = list(compute=T)
-)
+# fit.inla.logit = inla(formula=formula.inla.scaled, family="binomial",
+#                       data=qg.data.gg.inds,
+#                       control.compute=list(dic=T, return.marginals.predictor=T),
+#                       control.family = list(link = "logit"),
+#                       control.predictor = list(compute=T)
+# )
 
 fit.inla.gaussian = inla(formula=formula.inla.scaled, family="gaussian",
                              data=qg.data.gg.inds,
@@ -192,12 +192,12 @@ compute.observation.h2.SSH <- function(fit, nsamples, modelname, fn.prepend=""){
   ti = Sys.time()
   cat("Entering `new.h2.transf` (Bayesian sampling)\n")
   heritability_averaged = new.h2.transf(fit, modelname, nsamples)
-  cat("Done after", difftime(Sys.time(),ti, units="mins"), "minutes. Entering same function without the Bayesian stuff.\n")
+  cat("Done after", difftime(Sys.time(),ti, units="mins"), "minutes.\nEntering `new.h2.transf` (Frequentist)\n")
   
   ti = Sys.time()
   marginal.mode = inla.posterior.marginal.latent.mode(fit)
   heritability_frequentist_avged = new.h2.transf(fit, modelname, nsamples, marginal.mode=marginal.mode)
-  cat("Done after", difftime(Sys.time(),ti, units="mins"), "minutes. Now without averaging:")
+  cat("Done after", difftime(Sys.time(),ti, units="mins"), "minutes. \nNow without averaging:\n")
   
   ti = Sys.time()
   heritability_notavged = get.h2.from.qgparams(fit, modelname, nsamples)
