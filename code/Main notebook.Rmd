@@ -44,6 +44,7 @@ library("MCMCglmm")
 library(cowplot)
 library(grid)
 library(extrafont)
+library(reshape2)
 font_import(pattern = "cmunrm.ttf", prompt = F) # LaTeX font
 loadfonts(device = "win")
 texfont <- "CMU Serif" # Laptop...
@@ -60,6 +61,12 @@ d.ped <- ped.prune.inds <- read.table("../data/ped.prune.inds.steffi.txt",
 d.Q <- read.table("../data/Q.data.steffi.txt", header = TRUE)
 
 qg.data.gg.inds$natalyr.id <- qg.data.gg.inds$natalyr.no
+```
+
+Some global settings:
+```{r}
+SAVE.PLOT <- TRUE
+n.samples <- 10000
 ```
 
 Below we do a couple more preprocessing steps
@@ -160,141 +167,7 @@ data.frame(
   Probit = fit.inla.probit$dic$dic, row.names = "Deviance Information Criteria"
 )
 ```
-
-
-
-
-## Residual analyses on Gaussian model
-
-For the Gaussian INLA model we also compute PIT (probability integral transform) values. They resemble the probability that a new response is less than the observed response. Under Gaussian model assumptions, PIT values should be uniformly distributed. [Source](https://julianfaraway.github.io/brinla/examples/chicago.html).
-
-
-* The first plot are the sorted PIT values over quantiles, analogous to a Q-Q plot in frequentist data. It shows a clear non-linear trend but rather a sigmoid-like curve.
-* The second plot shows the PIT values across the different posterior fitted value means. Here we expect no clear pattern for well-behaved models, which is not the case in our model.
-* The third plot is the residuals $y_i - \hat{y_i}$ with 95% credible interval. Here, we see a clear separation of those
-
-```{r gaussian plotting}
-SAVE.PLOT <- TRUE # global setting
-
-pit.g <- fit.inla.gaussian$cpo$pit # PIT-values
-
-# <Plot 1> Analogous to QQ-plot so should be linear
-# --------
-ggplot(data = data.frame(
-  Quantiles = 1:length(pit.g) / (length(pit.g) + 1), PIT = sort(pit.g)
-)) +
-  geom_point(aes(x = Quantiles, y = PIT)) +
-  ggtitle("Sorted PIT values for Gaussian model")
-if (SAVE.PLOT) ggsave("../figures/PIT-sorted.pdf")
-
-# <Plot 2> Posterior mean fitted values as a function of PIT values
-# --------    analagous to "Residuals vs fitted"
-
-ggplot(
-  cbind(fit.inla.gaussian$summary.fitted.values, pit.g),
-  aes(x = mean, y = pit.g)
-) +
-  geom_point() +
-  geom_smooth() +
-  labs(
-    title = "PIT values over posterior mean fitted values",
-    x = "Posterior fitted values (mean)",
-    y = "PIT value"
-  )
-if (SAVE.PLOT) ggsave("../figures/PIT-over-fitted.pdf")
-
-
-
-# <Plot 3> Plot of 'residuals', i.e. difference in true data and the
-# --------    mean of the fitted values
-df.resid <- qg.data.gg.inds$surv.ind.to.ad -
-  fit.inla.gaussian$summary.fitted.values
-rownames(df.resid) <- 1:nrow(df.resid)
-df.resid$class <- qg.data.gg.inds$surv.ind.to.ad
-
-ggplot(data = df.resid, aes(x = as.numeric(row.names(df.resid)), y = mean, color = factor(class))) +
-  geom_errorbar(aes(ymin = `0.025quant`, ymax = `0.975quant`), color = "darkgrey") +
-  geom_point() +
-  scale_color_manual(name = "Juvenile survival", values = c("darkred", "steelblue")) +
-  labs(title = "Residuals of Gaussian model", x = "Index", y = "Residuals")
-if (SAVE.PLOT) ggsave("../figures/Residuals-gaussian.pdf")
-
-
-# <Plot 5> Recreation of QQ plot using residuals computed above instead of PIT values
-#           Unused
-plot.inla.qqplot <- function() {
-  n.obs <- length(qg.data.gg.inds$u)
-  qqplot(
-    qnorm(ppoints(n.obs),
-      mean = mean(qg.data.gg.inds$surv.ind.to.ad),
-      sd = sd(qg.data.gg.inds$surv.ind.to.ad)
-    ),
-    resids,
-    xlab = "Theoretical quantiles", ylab = "Sample Quantiles",
-    main = "Q-Q plot from 'residuals' above"
-  )
-}
-```
-## Transformations of heritability
-
-Before developing methods for transformed heritability, we need to be able to sample from the marginal fitted values on latent scale.
-
-```{r}
-marginal.latent.mode <- function(fit) {
-  #' Get mode for each marginal linear predictor
-  modes <- c()
-  iter <- 1
-  for (predictor in names(fit$marginals.linear.predictor)) {
-    xy <- get(predictor, fit$marginals.linear.predictor)
-    modes[iter] <- xy[, "x"][which.max(xy[, "y"])]
-    iter <- iter + 1
-  }
-  modes
-}
-
-
-marginal.latent.samples <- function(fit, nsamples) {
-  #' Rather than only using mode for each predictor, we use samples
-  #' from its posterior, with _nsamples_ samples.
-  #' Output is list of _nsamples_ elements, with each element in the list being
-  #' a vector of the predictor size (i.e. number of observations in data)
-  out_transpose <- matrix(
-    nrow = nsamples,
-    ncol = length(fit$marginals.linear.predictor)
-  )
-  for (i in seq_along(fit$marginals.linear.predictor)) {
-    xy <- get(names(fit$marginals.linear.predictor)[i], fit$marginals.linear.predictor)
-    out_transpose[, i] <- inla.rmarginal(nsamples, xy)
-  }
-
-  # We want list where each list element is one sample, i.e. the transposed
-  out <- list()
-  for (i in 1:nsamples) {
-    out[[i]] <- out_transpose[i, ]
-  }
-  out
-}
-
-
-report.max.skewness <- function(posterior) {
-  #' Made esepcially for marginal linear predictor but should work on any
-  #' list containing named "x" and "y" columns
-  library(e1071)
-  iter <- 1
-  posterior_skews <- c()
-  for (predictor in names(posterior)) {
-    posterior_skews[iter] <- skewness(get(predictor, posterior)[, "x"])
-    iter <- iter + 1
-  }
-  cat(
-    "Minimum skew for list no.", which.min(posterior_skews), "with skewness",
-    min(posterior_skews), "and max for list no.", which.max(posterior_skews),
-    "with skewness", max(posterior_skews), ".\n"
-  )
-}
-```
-
-We can now define methods to obtain heritability on the different scales. The first function computes $h^2$ on latent scale, or using the direct transformation by including link variance in denominator. The second method is more comprehensive and uses the library `QGglmm` to obtain estimates on data scale.
+# Latent heritability
 
 ```{r}
 get.h2 <- function(inla.fit, n, use.scale = F, model = NA, include.fixed = F) {
@@ -324,292 +197,6 @@ get.h2 <- function(inla.fit, n, use.scale = F, model = NA, include.fixed = F) {
   h2.inla <- (1 / samples[, "Precision for id"]) / denominator
   return(h2.inla)
 }
-
-get.h2.from.qgparams <- function(inla.fit,
-                                 modelname,
-                                 n,
-                                 averaging = F,
-                                 averaging.mode.only = F) {
-  #' Computes a posterior of data-scale heritability (h2) using QGParams
-  #'
-  #' Params:
-  #' inla.fit:  The fitted INLA object
-  #' modelname: A string specifying model
-  #'    ("Gaussian", "binomN1.probit", "binom1.logit")
-  #' n:         Number of samples
-  #' averaging: Flag to determine if we want to average over fixed effects
-  #' mode.only: Flag to determine if marginal latent should just be mode
-
-  stopifnot(modelname %in% c("Gaussian", "binom1.probit", "binom1.logit"))
-  samples.posterior <- inla.hyperpar.sample(n = n, inla.fit)
-  vp.samples <- 0
-  for (cname in colnames(samples.posterior)) {
-    vp.samples <- vp.samples + 1 / samples.posterior[, cname]
-  }
-
-  if (!averaging) {
-    mu <- inla.fit$summary.fixed$mean[1] # Intercept
-    va.samples <- 1 / samples.posterior[, "Precision for id"]
-    kwargs <- list(verbose = F)
-
-    h2.getter <- function(...) {
-      get("h2.obs", suppressWarnings(QGparams(...)))
-    }
-    posterior <- mapply(h2.getter, mu, va.samples, vp.samples, modelname, MoreArgs = kwargs)
-  } else {
-    # Average over fixed effects
-    debug_mu <- fit$summary.fixed$mean[1]
-    vp.samples <- 0
-    df <- data.frame(
-      va = as.vector(1 / posterior.samples[, "Precision for id"]),
-      vp = as.vector(vp.samples)
-    )
-    if (!averaging.mode.only) {
-      df$predict <- marginal.latent.samples(fit, nsamples)
-      posterior <- do.call("rbind", apply(df, 1, function(row) {
-        QGparams(
-          predict = row[["predict"]], var.a = row[["va"]], var.p = row[["vp"]],
-          model = modelname, verbose = F
-        )
-      }))
-    } else {
-      predict.argument <- marginal.latent.mode(inla.fit)
-      posterior <- do.call("rbind", apply(df, 1, function(r) {
-        QGparams(
-          predict = predict.argument, var.a = row[["va"]], var.p = row[["vp"]],
-          model = modelname, verbose = F
-        )
-      }))
-    }
-  }
-
-  return(posterior)
-}
-
-#### Log from running function on Markov ####
-# Called function at: Mon Feb 27 11:39:41 AM 2023
-# Entering `new.h2.transf` (Bayesian sampling)
-# DEBUG: Entering sampling for loop
-# DEBUG: Entering transposing loop
-# Done after 115.9634 minutes. Entering same function without the Bayesian stuff.
-# Done after 106.1235 minutes. Now without averaging:Done after 0.1312247 minutes.
-# Saving to disk...
-# [1] 0
-# Called function at: Mon Feb 27 03:21:54 PM 2023
-# Entering `new.h2.transf` (Bayesian sampling)
-# DEBUG: Entering sampling for loop
-# DEBUG: Entering transposing loop
-# Done after 4.129497 minutes. Entering same function without the Bayesian stuff.
-# Done after 0.1096536 minutes. Now without averaging:Done after 0.05950377 minutes.
-# Saving to disk...
-# [1] 0
-```
-
-Now we compute the heritability on the different scales.
-
-```{r}
-# Compute h2
-# TODO consider changing this to rather be stored in data.frame, this method is
-#       difficult to handle..
-n.samples <- 10000
-heritability <- data.frame(gaussian = get.h2(fit.inla.gaussian, n.samples))
-
-
-heritability$probit.latent <- get.h2(fit.inla.probit, n.samples)
-heritability$probit.scaled <- get.h2(fit.inla.probit, n.samples,
-  use.scale = T,
-  model = "binom1.probit"
-)
-heritability$probit.qgglmm <- get.h2.from.qgparams(
-  fit.inla.probit,
-  "binom1.probit", n.samples
-)
-```
-
-
-We want to see how the Gaussian one preforms.
-
-```{r scaled h2 posteriors}
-df.transformed.h2 <- data.frame(
-  samples = c(
-    heritability$probit.qgglmm,
-    heritability$gaussian
-  ),
-  Model = c(
-    rep("Probit", length(heritability$probit.qgglmm)),
-    rep("Gaussian (no transformation)", length(heritability$gaussian))
-  )
-)
-
-ggplot(df.transformed.h2, aes(x = samples, fill = Model)) +
-  geom_density(alpha = 0.5) +
-  ggtitle("Posterior of transformed heritability") +
-  xlab("Heritability") +
-  ylab("Density") +
-  xlim(c(0, 0.1)) #+ scale_x_log10()
-```
-It seems to capture around the same stuff but the tail in the Gaussian posterior is way larger.
-
-So far we've only used `QGglmm` without averaging over fixed effects. This takes considerably more time to process, but we still do that one time to compare the results. Then we compare the heritability on four different scales
-* Using 10k samples from the *marginal linear predictor*, and using this to average over
-* Grabbing the mode for each *marginal linear predictor*, and passing the mode for each 10k sample
-* No averaging, i.e. use intercept value instead.
-* Use direct scaling method with link variance.
-
-We see that the 3 first provide almost exactly the same result. Thus, we don't need to average over fixed effects in this dataset.
-
-
-```{r qgparam setting exploration}
-
-## Analyze things ran on Markov server
-plot.markov.result <- function(rdata.file, ssh.samples, plot.title = NA, saveplot = F) {
-  load(rdata.file)
-  df <- data.frame(
-    Heritability = c(
-      heritability_averaged$h2.obs,
-      heritability_frequentist_avged$h2.obs,
-      heritability_notavged,
-      scaled.heritability
-    ),
-    Method = c(
-      rep("h^2_Psi, Bayesian", ssh.samples),
-      rep("h^2_Psi, Frequentist", ssh.samples),
-      rep("h^2_Psi, No averaging", ssh.samples),
-      rep("h^2_Phi", ssh.samples)
-    )
-  )
-  color_palette <- c("#FFA600", "#FA2A00", "#7C43A6", "#0096FF")
-  p <- ggplot(df, aes(x = Heritability, fill = Method)) +
-    geom_density(alpha = 0.5) +
-    ylab("Density") +
-    scale_x_log10() +
-    scale_fill_manual(
-      values = color_palette,
-      labels = c(
-        expression(h[Phi]^2),
-        expression(h[Psi]^2 * ", Bayesian"),
-        expression(h[Psi]^2 * ", Frequentist"),
-        expression(h[Psi]^2 * ", No averaging")
-      )
-    ) +
-    theme(legend.text.align = 0)
-  if (!is.na(plot.title)) p <- p + labs(title = plot.title)
-  if (saveplot) {
-    ggsave(
-      filename = paste0(
-        "../figures/",
-        substring(rdata.file, 1, nchar(rdata.file) - 6),
-        ".pdf"
-      ),
-      plot = p
-    )
-  }
-  p
-}
-plot.markov.result("../data/heritabilities_SSH_binom1.probit.Rdata", 10000,
-  plot.title = "Transformations for probit model", saveplot = T
-)
-
-plot.markov.result("../data/simulation_heritabilities_SSH_binom1.probit.Rdata", 10000,
-  plot.title = "Simulation: Transformations for probit model", saveplot = T
-)
-
-# Currently not using logit model
-# plot.markov.result("../data/heritabilities_SSH_binom1.logit.Rdata", 10000,
-#   plot.title = "Heritability for Logit model", saveplot = F
-# )
-
-oldPlottingHeritability <- function() {
-  #' Wrapper for old code
-  par(mfrow = c(2, 2))
-  load("../data/heritabilities_SSH_binom1.logit.Rdata")
-  truehist(heritability_averaged$h2.obs,
-    main = "Bayesian",
-    xlab = expression(h[obs]^2)
-  )
-  truehist(heritability_frequentist_avged$h2.obs,
-    main = "Frequentist",
-    xlab = expression(h[obs]^2)
-  )
-  truehist(heritability_notavged,
-    main = "No averaging",
-    xlab = expression(h[obs]^2)
-  )
-  truehist(scaled.heritability,
-    main = "Direct scaling",
-    xlab = expression(h[obs]^2)
-  )
-  load("../data/heritabilities_SSH_binom1.probit.Rdata")
-  truehist(heritability_averaged$h2.obs,
-    main = "Bayesian",
-    xlab = expression(h[obs]^2)
-  )
-  truehist(heritability_frequentist_avged$h2.obs,
-    main = "Frequentist",
-    xlab = expression(h[obs]^2)
-  )
-  truehist(heritability_notavged,
-    main = "No averaging",
-    xlab = expression(h[obs]^2)
-  )
-  truehist(scaled.heritability,
-    main = "Direct scaling",
-    xlab = expression(h[obs]^2)
-  )
-}
-```
-
-
-Method to export heritability estimates in a TeX table
-
-```{r}
-get_mode <- function(vec) {
-  d <- density(vec)
-  d$x[which.max(d$y)]
-}
-
-
-print_one_metric <- function(fit, param, digits) {
-  paste(
-    round(mean(get(param, fit)), digits), " (",
-    round(get_mode(get(param, fit)), digits), ")\\newline $\\pm$ ",
-    round(sd(get(param, fit)), digits),
-    sep = ""
-  )
-}
-
-print_heritability_table <- function(digits) {
-  #' `digits` is the number of significant digits
-  #' Prints tabularx-table of heritability with posterior mean, posterior mode
-  #' and standard deviation. Does it for logit, probit and Gaussian.
-  header <- paste(
-    "% TABLE FROM R:", format(Sys.time(), "%a %b %d %X %Y"), "\n",
-    "\\begin{table}[ht]\\centering\n",
-    "\\begin{tabularx}{\\textwidth}{lXX}\n",
-    "\\hline\n",
-    " & Binomial probit & Gaussian  \\\\ \n",
-    "\\hline \n"
-  )
-  main <- paste(
-    "Latent &", print_one_metric(heritability, "probit.latent", digits),
-    "&", print_one_metric(heritability, "gaussian", digits),
-    "\\\\ \n",
-    "Scaled &", print_one_metric(heritability, "probit.scaled", digits),
-    "& --",
-    "\\\\ \n",
-    "QGglmm &", print_one_metric(heritability, "probit.qgglmm", digits),
-    "& -- \n"
-  )
-  footer <- paste("\\end{tabularx}",
-    "\\caption{<Insert caption>}",
-    "\\label{tab:heritabily means}",
-    "\\end{table}",
-    sep = "\n"
-  )
-
-  cat(header, main, footer, sep = "\n")
-}
-print_heritability_table(4)
 ```
 
 # Simulation data
@@ -993,6 +580,414 @@ if (SAVE.PLOT) ggsave("../figures/relatedness-offdiagonal-sim.pdf", width = 20, 
 plot.A.matrix(d.ped[, c("id", "mother.id", "father.id")], ", Song sparrow data")
 if (SAVE.PLOT) ggsave("../figures/relatedness-offdiagonal-songsparrow.pdf", width = 20, height = 20, units = "cm")
 ```
+
+
+
+# Residual analyses on Gaussian model
+
+(For now, we only consider application data, but it's easy to do the same for the simulation case)
+
+For the Gaussian INLA model we also compute PIT (probability integral transform) values. They resemble the probability that a new response is less than the observed response. Under Gaussian model assumptions, PIT values should be uniformly distributed. [Source](https://julianfaraway.github.io/brinla/examples/chicago.html).
+
+
+* The first plot are the sorted PIT values over quantiles, analogous to a Q-Q plot in frequentist data. It shows a clear non-linear trend but rather a sigmoid-like curve.
+* The second plot shows the PIT values across the different posterior fitted value means. Here we expect no clear pattern for well-behaved models, which is not the case in our model.
+* The third plot is the residuals $y_i - \hat{y_i}$ with 95% credible interval. Here, we see a clear separation of those
+
+```{r gaussian plotting}
+
+pit.g <- fit.inla.gaussian$cpo$pit # PIT-values
+
+# <Plot 1> Analogous to QQ-plot so should be linear
+# --------
+ggplot(data = data.frame(
+  Quantiles = 1:length(pit.g) / (length(pit.g) + 1), PIT = sort(pit.g)
+)) +
+  geom_point(aes(x = Quantiles, y = PIT)) +
+  ggtitle("Sorted PIT values for Gaussian model")
+if (SAVE.PLOT) ggsave("../figures/PIT-sorted.pdf")
+
+# <Plot 2> Posterior mean fitted values as a function of PIT values
+# --------    analagous to "Residuals vs fitted"
+
+ggplot(
+  cbind(fit.inla.gaussian$summary.fitted.values, pit.g),
+  aes(x = mean, y = pit.g)
+) +
+  geom_point() +
+  geom_smooth() +
+  labs(
+    title = "PIT values over posterior mean fitted values",
+    x = "Posterior fitted values (mean)",
+    y = "PIT value"
+  )
+if (SAVE.PLOT) ggsave("../figures/PIT-over-fitted.pdf")
+
+
+
+# <Plot 3> Plot of 'residuals', i.e. difference in true data and the
+# --------    mean of the fitted values
+df.resid <- qg.data.gg.inds$surv.ind.to.ad -
+  fit.inla.gaussian$summary.fitted.values
+rownames(df.resid) <- 1:nrow(df.resid)
+df.resid$class <- qg.data.gg.inds$surv.ind.to.ad
+
+ggplot(data = df.resid, aes(x = as.numeric(row.names(df.resid)), y = mean, color = factor(class))) +
+  geom_errorbar(aes(ymin = `0.025quant`, ymax = `0.975quant`), color = "darkgrey") +
+  geom_point() +
+  scale_color_manual(name = "Juvenile survival", values = c("darkred", "steelblue")) +
+  labs(title = "Residuals of Gaussian model", x = "Index", y = "Residuals")
+if (SAVE.PLOT) ggsave("../figures/Residuals-gaussian.pdf")
+
+
+# <Plot 5> Recreation of QQ plot using residuals computed above instead of PIT values
+#           Unused
+plot.inla.qqplot <- function() {
+  n.obs <- length(qg.data.gg.inds$u)
+  qqplot(
+    qnorm(ppoints(n.obs),
+      mean = mean(qg.data.gg.inds$surv.ind.to.ad),
+      sd = sd(qg.data.gg.inds$surv.ind.to.ad)
+    ),
+    resids,
+    xlab = "Theoretical quantiles", ylab = "Sample Quantiles",
+    main = "Q-Q plot from 'residuals' above"
+  )
+}
+```
+
+# Transformations of heritability
+
+Before developing methods for transformed heritability, we need to be able to sample from the marginal fitted values on latent scale.
+
+```{r}
+marginal.latent.mode <- function(fit) {
+  #' Get mode for each marginal linear predictor
+  modes <- c()
+  iter <- 1
+  for (predictor in names(fit$marginals.linear.predictor)) {
+    xy <- get(predictor, fit$marginals.linear.predictor)
+    modes[iter] <- xy[, "x"][which.max(xy[, "y"])]
+    iter <- iter + 1
+  }
+  modes
+}
+
+
+marginal.latent.samples <- function(fit, nsamples) {
+  #' Rather than only using mode for each predictor, we use samples
+  #' from its posterior, with _nsamples_ samples.
+  #' Output is list of _nsamples_ elements, with each element in the list being
+  #' a vector of the predictor size (i.e. number of observations in data)
+  out_transpose <- matrix(
+    nrow = nsamples,
+    ncol = length(fit$marginals.linear.predictor)
+  )
+  for (i in seq_along(fit$marginals.linear.predictor)) {
+    xy <- get(names(fit$marginals.linear.predictor)[i], fit$marginals.linear.predictor)
+    out_transpose[, i] <- inla.rmarginal(nsamples, xy)
+  }
+
+  # We want list where each list element is one sample, i.e. the transposed
+  out <- list()
+  for (i in 1:nsamples) {
+    out[[i]] <- out_transpose[i, ]
+  }
+  out
+}
+
+
+
+report.max.skewness <- function(posterior) {
+  #' Made esepcially for marginal linear predictor but should work on any
+  #' list containing named "x" and "y" columns
+  library(e1071)
+  iter <- 1
+  posterior_skews <- c()
+  for (predictor in names(posterior)) {
+    posterior_skews[iter] <- skewness(get(predictor, posterior)[, "x"])
+    iter <- iter + 1
+  }
+  cat(
+    "Minimum skew for list no.", which.min(posterior_skews), "with skewness",
+    min(posterior_skews), "and max for list no.", which.max(posterior_skews),
+    "with skewness", max(posterior_skews), ".\n"
+  )
+}
+```
+
+We can now define methods to obtain heritability on the different scales. The first function computes $h^2$ on latent scale, or using the direct transformation by including link variance in denominator. The second method is more comprehensive and uses the library `QGglmm` to obtain estimates on data scale. So far we've only used `QGglmm` without averaging over fixed effects. This takes considerably more time to process, but we still do that one time to compare the results. Then we compare the heritability on four different scales
+
+* Using 10k samples from the *marginal linear predictor*, and using this to average over
+* Grabbing the mode for each *marginal linear predictor*, and passing the mode for each 10k sample
+* No averaging, i.e. use intercept value instead.
+* Use direct scaling method with link variance.
+
+```{r}
+
+get.h2.from.qgparams <- function(inla.fit,
+                                 modelname,
+                                 n,
+                                 averaging = F,
+                                 averaging.mode.only = F) {
+  #' Computes a posterior of data-scale heritability (h2) using QGParams
+  #'
+  #' Params:
+  #' inla.fit:  The fitted INLA object
+  #' modelname: A string specifying model
+  #'    ("Gaussian", "binomN1.probit", "binom1.logit")
+  #' n:         Number of samples
+  #' averaging: Flag to determine if we want to average over fixed effects
+  #' mode.only: Flag to determine if marginal latent should just be mode
+
+  stopifnot(modelname %in% c("Gaussian", "binom1.probit", "binom1.logit"))
+  samples.posterior <- inla.hyperpar.sample(n = n, inla.fit)
+  vp.samples <- 0
+  for (cname in colnames(samples.posterior)) {
+    vp.samples <- vp.samples + 1 / samples.posterior[, cname]
+  }
+
+  if (!averaging) {
+    mu <- inla.fit$summary.fixed$mean[1] # Intercept
+    va.samples <- 1 / samples.posterior[, "Precision for id"]
+    kwargs <- list(verbose = F)
+
+    h2.getter <- function(...) {
+      get("h2.obs", suppressWarnings(QGparams(...)))
+    }
+    posterior <- mapply(h2.getter, mu, va.samples, vp.samples, modelname, MoreArgs = kwargs)
+    return(posterior)
+  } else {
+    # Average over fixed effects
+    debug_mu <- inla.fit$summary.fixed$mean[1]
+    vp.samples <- 0
+    df <- data.frame(
+      va = as.vector(1 / samples.posterior[, "Precision for id"]),
+      vp = as.vector(vp.samples)
+    )
+    if (!averaging.mode.only) {
+      # Bayesian approach
+      df$predict <- marginal.latent.samples(inla.fit, n)
+      
+      posterior <- do.call("rbind", apply(df, 1, function(row) {
+        QGparams(
+          predict = row[["predict"]], var.a = row[["va"]], var.p = row[["vp"]],
+          model = modelname, verbose = F
+        )
+      }))
+    } else {
+      predict.argument <- marginal.latent.mode(inla.fit)
+      posterior <- do.call("rbind", apply(df, 1, function(row) {
+        QGparams(
+          predict = predict.argument, var.a = row[["va"]], var.p = row[["vp"]],
+          model = modelname, verbose = F
+        )
+      }))
+    }
+   return(posterior$h2.obs) 
+  }
+
+  
+}
+
+
+```
+
+Now we compute the heritability on the different scales.
+
+```{r}
+# Compute h2
+heritability <- data.frame(gaussian = get.h2(fit.inla.gaussian, n.samples))
+
+
+heritability$probit.latent <- get.h2(fit.inla.probit, n.samples)
+heritability$probit.scaled <- get.h2(fit.inla.probit, n.samples,
+  use.scale = T,
+  model = "binom1.probit"
+)
+heritability$probit.qgglmm <- get.h2.from.qgparams(
+  fit.inla.probit,
+  "binom1.probit", n.samples
+)
+```
+
+Then, compute the 3 different approaches with `QGglmm` (this is quite slow).
+
+```{r}
+h2.psi <- data.frame(application.bayesian=
+                       get.h2.from.qgparams(fit.inla.probit, "binom1.probit",
+                                        n.samples, averaging = T,
+                                        averaging.mode.only = F)
+)
+h2.psi$application.frequentist <- get.h2.from.qgparams(fit.inla.probit,
+                                                       "binom1.probit",
+                                                       n.samples,
+                                                       averaging = T,
+                                                       averaging.mode.only = T)
+h2.psi$application.noavg <- get.h2.from.qgparams(fit.inla.probit,
+                                                       "binom1.probit",
+                                                       n.samples,
+                                                       averaging = F)
+# Link variance scaling for reference
+h2.psi$application.phi <- heritability$probit.scaled
+
+```
+
+Let's see how it looks like.
+```{r}
+
+ggplot(data=melt(h2.psi)) +
+  geom_density(aes(x=value, fill=variable), alpha=0.5) +
+  scale_x_log10() +
+  scale_fill_manual(
+    values = c("#FFA600", "#FA2A00", "#7C43A6", "#0096FF"),
+    labels = c(
+      expression(h[Psi]^2 *", Bayesian"),
+      expression(h[Psi]^2 *", Frequentist"),
+      expression(h[Psi]^2 *", No averaging"),
+      expression(h[Phi]^2)
+      )
+    ) + ylab("Density") + xlab("Heritability") +
+  theme(legend.text.align = 0) 
+
+## Analyze things ran on Markov server
+plot.markov.result <- function(rdata.file, ssh.samples, plot.title = NA, saveplot = F) {
+  #' Analyze heritability from Rdata file. This is useful for binomial logit
+  #' models or other models without closed form solutions
+  load(rdata.file)
+  df <- data.frame(
+    Heritability = c(
+      heritability_averaged$h2.obs,
+      heritability_frequentist_avged$h2.obs,
+      heritability_notavged,
+      scaled.heritability
+    ),
+    Method = c(
+      rep("h^2_Psi, Bayesian", ssh.samples),
+      rep("h^2_Psi, Frequentist", ssh.samples),
+      rep("h^2_Psi, No averaging", ssh.samples),
+      rep("h^2_Phi", ssh.samples)
+    )
+  )
+  color_palette <- c("#FFA600", "#FA2A00", "#7C43A6", "#0096FF")
+  p <- ggplot(df, aes(x = Heritability, fill = Method)) +
+    geom_density(alpha = 0.5) +
+    ylab("Density") +
+    scale_x_log10() +
+    scale_fill_manual(
+      values = color_palette,
+      labels = c(
+        expression(h[Phi]^2),
+        expression(h[Psi]^2 * ", Bayesian"),
+        expression(h[Psi]^2 * ", Frequentist"),
+        expression(h[Psi]^2 * ", No averaging")
+      )
+    ) +
+    theme(legend.text.align = 0)
+  if (!is.na(plot.title)) p <- p + labs(title = plot.title)
+  if (saveplot) {
+    ggsave(
+      filename = paste0(
+        "../figures/",
+        substring(rdata.file, 1, nchar(rdata.file) - 6),
+        ".pdf"
+      ),
+      plot = p
+    )
+  }
+  p
+}
+plot.markov.result("../data/heritabilities_SSH_binom1.probit.Rdata", 10000,
+  plot.title = "Transformations for probit model", saveplot = T
+)
+
+plot.markov.result("../data/simulation_heritabilities_SSH_binom1.probit.Rdata", 10000,
+  plot.title = "Simulation: Transformations for probit model", saveplot = T
+)
+
+```
+
+
+```{r scaled h2 posteriors}
+
+df.transformed.h2 <- data.frame(
+  samples = c(
+    heritability$probit.qgglmm,
+    heritability$gaussian
+  ),
+  Model = c(
+    rep("Probit", length(heritability$probit.qgglmm)),
+    rep("Gaussian (no transformation)", length(heritability$gaussian))
+  )
+)
+
+ggplot(df.transformed.h2, aes(x = samples, fill = Model)) +
+  geom_density(alpha = 0.5) +
+  ggtitle("Posterior of transformed heritability") +
+  xlab("Heritability") +
+  ylab("Density") +
+  xlim(c(0, 0.1)) #+ scale_x_log10()
+```
+It seems to capture around the same stuff but the tail in the Gaussian posterior is way larger.
+
+
+
+We see that the 3 first provide almost exactly the same result. Thus, we don't need to average over fixed effects in this dataset.
+
+
+
+Method to export heritability estimates in a TeX table
+
+```{r}
+get_mode <- function(vec) {
+  d <- density(vec)
+  d$x[which.max(d$y)]
+}
+
+
+print_one_metric <- function(fit, param, digits) {
+  paste(
+    round(mean(get(param, fit)), digits), " (",
+    round(get_mode(get(param, fit)), digits), ")\\newline $\\pm$ ",
+    round(sd(get(param, fit)), digits),
+    sep = ""
+  )
+}
+
+print_heritability_table <- function(digits) {
+  #' `digits` is the number of significant digits
+  #' Prints tabularx-table of heritability with posterior mean, posterior mode
+  #' and standard deviation. Does it for logit, probit and Gaussian.
+  header <- paste(
+    "% TABLE FROM R:", format(Sys.time(), "%a %b %d %X %Y"), "\n",
+    "\\begin{table}[ht]\\centering\n",
+    "\\begin{tabularx}{\\textwidth}{lXX}\n",
+    "\\hline\n",
+    " & Binomial probit & Gaussian  \\\\ \n",
+    "\\hline \n"
+  )
+  main <- paste(
+    "Latent &", print_one_metric(heritability, "probit.latent", digits),
+    "&", print_one_metric(heritability, "gaussian", digits),
+    "\\\\ \n",
+    "Scaled &", print_one_metric(heritability, "probit.scaled", digits),
+    "& --",
+    "\\\\ \n",
+    "QGglmm &", print_one_metric(heritability, "probit.qgglmm", digits),
+    "& -- \n"
+  )
+  footer <- paste("\\end{tabularx}",
+    "\\caption{<Insert caption>}",
+    "\\label{tab:heritabily means}",
+    "\\end{table}",
+    sep = "\n"
+  )
+
+  cat(header, main, footer, sep = "\n")
+}
+print_heritability_table(4)
+```
+
 
 How does the Threshold-transformed Gaussian heritability perform compared to the posteriors for the probit model?
 
