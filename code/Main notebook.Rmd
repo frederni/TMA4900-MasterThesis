@@ -67,6 +67,7 @@ Some global settings:
 ```{r}
 SAVE.PLOT <- TRUE
 n.samples <- 10000
+FORMULA_EXTRA_IID_NOISE <- FALSE # iid N(0,1) noise in songsparrow formula
 ```
 
 Below we do a couple more preprocessing steps
@@ -114,7 +115,7 @@ qg.data.gg.inds$u <- 1:nrow(qg.data.gg.inds) # Extra IID effect
 The general INLA formula is provided below, where `f()` encode the random effect:
 
 ```{r}
-FORMULA_EXTRA_IID_NOISE <- FALSE # Change this to include iid N(0,1) noise
+
 
 formula.inla.scaled <- surv.ind.to.ad ~ f.coef.sc + g1.sc + natalyr.no.sc + brood.date.sc + sex +
   f(nestrec, model = "iid", hyper = list(
@@ -197,6 +198,12 @@ get.h2 <- function(inla.fit, n, use.scale = F, model = NA, include.fixed = F) {
   h2.inla <- (1 / samples[, "Precision for id"]) / denominator
   return(h2.inla)
 }
+
+threshold.scaling.param <- function(p) {
+  # h^2_l = threshold.scaling.param * h^2_obs
+  p * (1 - p) / (dnorm(qnorm(p)))^2
+}
+
 ```
 
 # Simulation data
@@ -298,10 +305,6 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0
 Now we try to run it through the model pipeline. Here we try $\eta_i = u_i + \varepsilon_i$ where residuals have variance $V_E=1$.
 
 ```{r}
-threshold.scaling.param <- function(p) {
-  # h^2_l = threshold.scaling.param * h^2_obs
-  p * (1 - p) / (dnorm(qnorm(p)))^2
-}
 
 simulated.formula <- simulated.response ~  f(id,
   model = "generic0",
@@ -349,20 +352,21 @@ report.simulated.threshold.estimate <- function(
     )
   )
 }
-sigmaA704 <- 0.05
-r <- report.simulated.threshold.estimate(
-  NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = sigmaA704,
+
+report.simulated.threshold.estimate(
+  NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0.05,
   function(u, .) {
     u + rnorm(length(u))
   },
   simulated.formula,
   Vp = sigmaA704 + 1
 )
-r
+
 ```
 
 Seems to fit generally well here. Let's quantitatively look into estimates for different $\sigma^2_A$:
 
+## Performance over varying $V_A$
 
 ```{r}
 plot.h2.deviation <- function(dichotomize = "round",
@@ -472,7 +476,11 @@ plot.h2.deviation <- function(dichotomize = "round",
   }
   return(list(res = res, p = p))
 }
+```
 
+Let's test it out for different values
+
+```{r}
 ### Plots for sigmaA in (10^-3, 10^3)
 
 simulation.res <- plot.h2.deviation(plot.fn = "round", SAVE.PLOT = T, dynamic.priors = T)
@@ -491,59 +499,13 @@ plot.h2.deviation(
   title = "Simulation heritability",
   plot.fn = "binom", dynamic.priors = TRUE
 )
-
-simulation.hyperparameters <- function(NeNc_list = 0.1, sigmaA_list = 0.4) {
-  p <- list()
-  if (length(NeNc_list) > 1) {
-    cat("Running simulations for NeNc values, sigmaA is fixed at", sigmaA_list[1])
-    for (NeNc in NeNc_list) {
-      simulation_results <- simulated.heritability(
-        NeNc = NeNc, idgen = 100, nGen = 10, sigmaA = sigmaA_list,
-        linear.predictor = function(u, .) u + rnorm(length(u)),
-        simulated.formula = simulated.formula
-      )
-      p[[paste0(NeNc)]] <- simulation_results$heritability
-    }
-  } else {
-    cat("Simulations for sigmaA, NeNc is fixed at", NeNc_list[1])
-    for (sigmaA in sigmaA_list) {
-      simulation_results <- simulated.heritability(
-        NeNc = NeNc_list, idgen = 100, nGen = 10, sigmaA = sigmaA,
-        linear.predictor = function(u, .) u + rnorm(length(u)),
-        simulated.formula = simulated.formula
-      )
-      p[[paste0(sigmaA)]] <- simulation_results$heritability
-    }
-  }
-  return(p)
-}
-
-hyperparameters_wrapper <- function() {
-  # To avoid being ran every time...
-  p <- simulation.hyperparameters(NeNc_list = c(0.05, 0.1, 0.25, 0.5))
-  p2 <- simulation.hyperparameters(sigmaA_list = c(0.01, 0.05, 0.1, 0.25, 0.5, 0.75) * 100)
-
-
-  par(mfrow = c(2, 2))
-  for (i in names(p)) {
-    truehist(get(i, p), xlab = paste("NeNc =", i))
-    abline(v = 0.4)
-  }
-  par(mfrow = c(3, 2))
-  for (i in names(p2)) {
-    truehist(get(i, p2), xlab = paste("sigmaA =", i))
-    cat("True h2", as.numeric(i) / (as.numeric(i) + 1), "\n")
-    abline(v = as.numeric(i) / (as.numeric(i) + 1)) # a+e_i, e_i~N
-  }
-}
-
-# hyperparameters_wrapper()
 ```
 
-First, rerun with $\eta_i=a_i$, i.e. without residuals on underlying scale. Similar results.
+
+## Without residual in linear predictor
+We also check what happens if we rerun with $\eta_i=a_i$, i.e. without residuals on underlying scale. Similar results.
 
 ```{r}
-# Try to re-run with another linear predictor, similar result
 report.simulated.threshold.estimate(
   0.5, 100, 9, 10, function(u, .) u,
   simulated.formula, 10
@@ -585,8 +547,6 @@ if (SAVE.PLOT) ggsave("../figures/relatedness-offdiagonal-songsparrow.pdf", widt
 
 # Residual analyses on Gaussian model
 
-(For now, we only consider application data, but it's easy to do the same for the simulation case)
-
 For the Gaussian INLA model we also compute PIT (probability integral transform) values. They resemble the probability that a new response is less than the observed response. Under Gaussian model assumptions, PIT values should be uniformly distributed. [Source](https://julianfaraway.github.io/brinla/examples/chicago.html).
 
 
@@ -624,7 +584,6 @@ ggplot(
 if (SAVE.PLOT) ggsave("../figures/PIT-over-fitted.pdf")
 
 
-
 # <Plot 3> Plot of 'residuals', i.e. difference in true data and the
 # --------    mean of the fitted values
 df.resid <- qg.data.gg.inds$surv.ind.to.ad -
@@ -639,21 +598,6 @@ ggplot(data = df.resid, aes(x = as.numeric(row.names(df.resid)), y = mean, color
   labs(title = "Residuals of Gaussian model", x = "Index", y = "Residuals")
 if (SAVE.PLOT) ggsave("../figures/Residuals-gaussian.pdf")
 
-
-# <Plot 5> Recreation of QQ plot using residuals computed above instead of PIT values
-#           Unused
-plot.inla.qqplot <- function() {
-  n.obs <- length(qg.data.gg.inds$u)
-  qqplot(
-    qnorm(ppoints(n.obs),
-      mean = mean(qg.data.gg.inds$surv.ind.to.ad),
-      sd = sd(qg.data.gg.inds$surv.ind.to.ad)
-    ),
-    resids,
-    xlab = "Theoretical quantiles", ylab = "Sample Quantiles",
-    main = "Q-Q plot from 'residuals' above"
-  )
-}
 ```
 
 # Transformations of heritability
@@ -676,8 +620,8 @@ marginal.latent.mode <- function(fit) {
 
 marginal.latent.samples <- function(fit, nsamples) {
   #' Rather than only using mode for each predictor, we use samples
-  #' from its posterior, with _nsamples_ samples.
-  #' Output is list of _nsamples_ elements, with each element in the list being
+  #' from its posterior, with nsamples samples.
+  #' Output is list of nsamples elements, with each element in the list being
   #' a vector of the predictor size (i.e. number of observations in data)
   out_transpose <- matrix(
     nrow = nsamples,
@@ -695,7 +639,6 @@ marginal.latent.samples <- function(fit, nsamples) {
   }
   out
 }
-
 
 
 report.max.skewness <- function(posterior) {
@@ -724,7 +667,6 @@ We can now define methods to obtain heritability on the different scales. The fi
 * Use direct scaling method with link variance.
 
 ```{r}
-
 get.h2.from.qgparams <- function(inla.fit,
                                  modelname,
                                  n,
@@ -790,10 +732,9 @@ get.h2.from.qgparams <- function(inla.fit,
   
 }
 
-
 ```
 
-Now we compute the heritability on the different scales.
+Now we compute the heritability on the different scales - for song sparrow data.
 
 ```{r}
 # Compute h2
@@ -814,96 +755,110 @@ heritability$probit.qgglmm <- get.h2.from.qgparams(
 Then, compute the 3 different approaches with `QGglmm` (this is quite slow).
 
 ```{r}
-h2.psi <- data.frame(application.bayesian=
+h2.psi.sparrow <- data.frame(bayesian=
                        get.h2.from.qgparams(fit.inla.probit, "binom1.probit",
                                         n.samples, averaging = T,
                                         averaging.mode.only = F)
 )
-h2.psi$application.frequentist <- get.h2.from.qgparams(fit.inla.probit,
+h2.psi.sparrow$frequentist <- get.h2.from.qgparams(fit.inla.probit,
                                                        "binom1.probit",
                                                        n.samples,
                                                        averaging = T,
                                                        averaging.mode.only = T)
-h2.psi$application.noavg <- get.h2.from.qgparams(fit.inla.probit,
+h2.psi.sparrow$noavg <- get.h2.from.qgparams(fit.inla.probit,
                                                        "binom1.probit",
                                                        n.samples,
                                                        averaging = F)
-# Link variance scaling for reference
-h2.psi$application.phi <- heritability$probit.scaled
+h2.psi.sparrow$phi <- heritability$probit.scaled
+```
+
+We do the same for simulation
+```{r}
+
+# We store an instance of a gaussian and probit model with V_A = 1
+tmp <- simulated.heritability(
+  sigmaA=1, linear.predictor = function(u,.) u+rnorm(length(u)),
+  simulated.formula = simulated.formula,
+  probit.model = TRUE)
+fit.sim.probit <- tmp$fit.probit
+
+h2.psi.sim1 <- data.frame(bayesian=
+                       get.h2.from.qgparams(fit.sim.probit, "binom1.probit",
+                                        n.samples, averaging = T,
+                                        averaging.mode.only = F)
+)
+h2.psi.sim1$frequentist <- get.h2.from.qgparams(fit.sim.probit,
+                                                       "binom1.probit",
+                                                       n.samples,
+                                                       averaging = T,
+                                                       averaging.mode.only = T)
+h2.psi.sim1$noavg <- get.h2.from.qgparams(fit.sim.probit,
+                                                       "binom1.probit",
+                                                       n.samples,
+                                                       averaging = F)
+h2.psi.sim1$phi <- get.h2(fit.sim.probit,n.samples,use.scale=T,model="binom1.probit")
+
+# Also fit for smaller V_A, i.e. 0.1
+tmp <- simulated.heritability(
+  sigmaA=0.1, linear.predictor = function(u,.) u+rnorm(length(u)),
+  simulated.formula = simulated.formula,
+  probit.model = TRUE)
+# fit.sim.gaussian <- tmp$fit # Might not need this
+fit.sim.probit <- tmp$fit.probit
+
+h2.psi.sim2 <- data.frame(bayesian=
+                       get.h2.from.qgparams(fit.sim.probit, "binom1.probit",
+                                        n.samples, averaging = T,
+                                        averaging.mode.only = F)
+)
+h2.psi.sim2$frequentist <- get.h2.from.qgparams(fit.sim.probit,
+                                                       "binom1.probit",
+                                                       n.samples,
+                                                       averaging = T,
+                                                       averaging.mode.only = T)
+h2.psi.sim2$noavg <- get.h2.from.qgparams(fit.sim.probit,
+                                                       "binom1.probit",
+                                                       n.samples,
+                                                       averaging = F)
+h2.psi.sim2$phi <- get.h2(fit.sim.probit,n.samples,use.scale=T,model="binom1.probit")
 
 ```
 
 Let's see how it looks like.
 ```{r}
 
-ggplot(data=melt(h2.psi)) +
-  geom_density(aes(x=value, fill=variable), alpha=0.5) +
-  scale_x_log10() +
-  scale_fill_manual(
-    values = c("#FFA600", "#FA2A00", "#7C43A6", "#0096FF"),
-    labels = c(
-      expression(h[Psi]^2 *", Bayesian"),
-      expression(h[Psi]^2 *", Frequentist"),
-      expression(h[Psi]^2 *", No averaging"),
-      expression(h[Phi]^2)
-      )
-    ) + ylab("Density") + xlab("Heritability") +
-  theme(legend.text.align = 0) 
-
-## Analyze things ran on Markov server
-plot.markov.result <- function(rdata.file, ssh.samples, plot.title = NA, saveplot = F) {
-  #' Analyze heritability from Rdata file. This is useful for binomial logit
-  #' models or other models without closed form solutions
-  load(rdata.file)
-  df <- data.frame(
-    Heritability = c(
-      heritability_averaged$h2.obs,
-      heritability_frequentist_avged$h2.obs,
-      heritability_notavged,
-      scaled.heritability
-    ),
-    Method = c(
-      rep("h^2_Psi, Bayesian", ssh.samples),
-      rep("h^2_Psi, Frequentist", ssh.samples),
-      rep("h^2_Psi, No averaging", ssh.samples),
-      rep("h^2_Phi", ssh.samples)
-    )
-  )
-  color_palette <- c("#FFA600", "#FA2A00", "#7C43A6", "#0096FF")
-  p <- ggplot(df, aes(x = Heritability, fill = Method)) +
-    geom_density(alpha = 0.5) +
-    ylab("Density") +
-    scale_x_log10() +
-    scale_fill_manual(
-      values = color_palette,
+plot.qgglmm.heritability <- function(h2.psi, dataset, SAVE.PLOT, plot.title=NA, fn.append=NULL){
+  #' Similar function for heritability loaded into memory
+  color.map = c(application="Dark2", simulation="Spectral")
+  stopifnot(dataset %in% names(color.map))
+  p <- ggplot(data=melt(h2.psi)) +
+    geom_density(aes(x=value, fill=variable), alpha=0.5) +
+    scale_fill_brewer(palette=color.map[dataset],
       labels = c(
-        expression(h[Phi]^2),
-        expression(h[Psi]^2 * ", Bayesian"),
-        expression(h[Psi]^2 * ", Frequentist"),
-        expression(h[Psi]^2 * ", No averaging")
-      )
-    ) +
-    theme(legend.text.align = 0)
-  if (!is.na(plot.title)) p <- p + labs(title = plot.title)
-  if (saveplot) {
-    ggsave(
-      filename = paste0(
-        "../figures/",
-        substring(rdata.file, 1, nchar(rdata.file) - 6),
-        ".pdf"
-      ),
-      plot = p
-    )
+        expression(h[Psi]^2 *", Bayesian"),
+        expression(h[Psi]^2 *", Frequentist"),
+        expression(h[Psi]^2 *", No averaging"),
+        expression(h[Phi]^2)
+        )
+      ) + ylab("Density") + xlab("Heritability") +
+    theme(legend.text.align = 0, legend.title=element_blank()) +
+    if(!is.na(plot.title)) ggtitle(plot.title)
+  
+  if(SAVE.PLOT){
+    ggsave(paste0("../figures/qgglmm-comparison-",dataset,fn.append,".pdf"),p)
   }
   p
 }
-plot.markov.result("../data/heritabilities_SSH_binom1.probit.Rdata", 10000,
-  plot.title = "Transformations for probit model", saveplot = T
-)
 
-plot.markov.result("../data/simulation_heritabilities_SSH_binom1.probit.Rdata", 10000,
-  plot.title = "Simulation: Transformations for probit model", saveplot = T
-)
+plot.qgglmm.heritability(h2.psi.sparrow, "application",
+                         SAVE.PLOT, plot.title="Application")
+plot.qgglmm.heritability(h2.psi.sim1, "simulation",
+                         SAVE.PLOT, plot.title=TeX("Simulation, $\\sigma^2_A=1$"),
+                         fn.append="va1")
+plot.qgglmm.heritability(h2.psi.sim2, "simulation",
+                         SAVE.PLOT, plot.title=TeX("Simulation, $\\sigma^2_A=0.1$"),
+                         fn.append="va0.1")
+
 
 ```
 
