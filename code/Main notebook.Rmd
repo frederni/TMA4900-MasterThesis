@@ -216,7 +216,7 @@ threshold.scaling.param <- function(p) {
 ```{r simulation method}
 simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0.8,
                                    linear.predictor = NA, simulated.formula = NA,
-                                   dichotomize = "round", pc.prior = NA, probit.model = F) {
+                                   dichotomize = "round", pc.prior = NA, probit.model = F, DIC=F) {
   #' Generate pedigree, fit gaussian (INLA) model and
   #' Remark: linear.predictor should be a callable and pass (at least) u
   #'
@@ -276,10 +276,19 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0
   # Model fitting LMM for binary trait
   # First reload formula environment to access local variables
   environment(simulated.formula) <- environment()
-  simulated.fit.inla <- inla(
-    formula = simulated.formula, family = "gaussian",
-    data = simulated.d.ped
-  )
+  if(DIC){
+    simulated.fit.inla <- inla(
+      formula = simulated.formula, family = "gaussian",
+      data = simulated.d.ped, control.compute=list(dic=T)
+      )
+  }
+  else{
+    simulated.fit.inla <- inla(
+      formula = simulated.formula, family = "gaussian",
+      data = simulated.d.ped
+      )
+  }
+
   # Checks for error status in INLA fit,
   stopifnot(simulated.fit.inla$mode$mode.status == 0) # status != 0 is trouble
   heritability <- get.h2(simulated.fit.inla, 10000) # 10k samples should be suff
@@ -288,7 +297,7 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0
   if (probit.model) {
     fit.probit <- inla(
       formula = simulated.formula, family = "binomial",
-      data = simulated.d.ped, control.compute = list(return.marginals.predictor = T)
+      data = simulated.d.ped, control.compute = list(return.marginals.predictor = T, dic=T)
     )
   } else {
     fit.probit <- NULL
@@ -880,6 +889,33 @@ plot.qgglmm.heritability(h2.psi.sim2, "simulation",
 ```
 ## Compare different scales
 
+First, we fit the simulation probit model and get simulation-based heritability on all scales.
+
+```{r liability estimates}
+
+heritability$gaussian.liability <- threshold.scaling.param(
+  mean(qg.data.gg.inds$surv.ind.to.ad)
+) * heritability$gaussian
+simulation.res2 <- simulated.heritability(0.5, 100, 9,
+  sigmaA = 0.5,
+  linear.predictor = function(u, .) u + rnorm(length(u)),
+  simulated.formula = simulated.formula,
+  probit.model = TRUE, DIC=TRUE
+)
+heritability.sim <- data.frame(
+  gaussian = simulation.res2$heritability,
+  probit.latent = get.h2(simulation.res2$fit.probit, 10000),
+  probit.scaled = get.h2(simulation.res2$fit.probit, 10000, TRUE, "binom1.probit"),
+  probit.qgglmm = get.h2.from.qgparams(
+    simulation.res2$fit.probit, "binom1.probit",
+    10000
+  )
+)
+heritability.sim$gaussian.liability <- threshold.scaling.param(simulation.res2$p) *
+  heritability.sim$gaussian
+
+```
+
 Method to export heritability estimates in a TeX table
 
 ```{r print latex table}
@@ -898,7 +934,7 @@ print_one_metric <- function(fit, param, digits) {
   )
 }
 
-print_heritability_table <- function(digits) {
+print_heritability_table <- function(digits, h2appl, h2sim) {
   #' `digits` is the number of significant digits
   #' Prints tabularx-table of heritability with posterior mean, posterior mode
   #' and standard deviation. Does it for logit, probit and Gaussian.
@@ -907,56 +943,39 @@ print_heritability_table <- function(digits) {
     "\\begin{table}[ht]\\centering\n",
     "\\begin{tabularx}{\\textwidth}{lXX}\n",
     "\\hline\n",
-    " & Binomial probit & Gaussian  \\\\ \n",
+    " & Application & Simulation $V_A=0.5$  \\\\ \n",
     "\\hline \n"
   )
   main <- paste(
-    "Latent &", print_one_metric(heritability, "probit.latent", digits),
-    "&", print_one_metric(heritability, "gaussian", digits),
+    "Gaussian $h^2_{obs}$ &", print_one_metric(h2appl, "gaussian", digits),
+    "&", print_one_metric(h2sim, "gaussian", digits),
     "\\\\ \n",
-    "Scaled &", print_one_metric(heritability, "probit.scaled", digits),
-    "& --",
+    "Gaussian $h^2_{liab}$ &", print_one_metric(h2appl, "gaussian.liability", digits),
+    "&", print_one_metric(h2sim, "gaussian.liability", digits),
     "\\\\ \n",
-    "QGglmm &", print_one_metric(heritability, "probit.qgglmm", digits),
-    "& -- \n"
+    "Probit $h^2_{lat}$ &", print_one_metric(h2appl, "probit.latent", digits),
+    "&", print_one_metric(h2sim, "probit.latent", digits),
+    "\\\\ \n",
+    "Probit $h^2_{\\Phi}$ &", print_one_metric(h2appl, "probit.scaled", digits),
+    "&", print_one_metric(h2sim, "probit.scaled", digits),
+    "\\\\ \n",
+    "Probit $h^2_{\\Psi}$ &", print_one_metric(h2appl, "probit.qgglmm", digits),
+    "&", print_one_metric(h2sim, "probit.qgglmm", digits),
+    "\n"
   )
   footer <- paste("\\end{tabularx}",
     "\\caption{<Insert caption>}",
-    "\\label{tab:heritabily means}",
+    "\\label{tab:heritabily results}",
     "\\end{table}",
     sep = "\n"
   )
 
   cat(header, main, footer, sep = "\n")
 }
-print_heritability_table(4)
+print_heritability_table(4, heritability, heritability.sim)
 ```
-The table gives some indication, but we also want to look qualitatively on the densities. We start by just plotting a grid to compare each Gaussian vs. Probit scale two by two. First, we fit the simulation probit model and get simulation-based heritability on all scales.
 
-```{r liability estimates}
-
-heritability$gaussian.liability <- threshold.scaling.param(
-  mean(qg.data.gg.inds$surv.ind.to.ad)
-) * heritability$gaussian
-simulation.res2 <- simulated.heritability(0.5, 100, 9,
-  sigmaA = 0.5,
-  linear.predictor = function(u, .) u + rnorm(length(u)),
-  simulated.formula = simulated.formula,
-  probit.model = TRUE
-)
-heritability.sim <- data.frame(
-  gaussian = simulation.res2$heritability,
-  probit.latent = get.h2(simulation.res2$fit.probit, 10000),
-  probit.scaled = get.h2(simulation.res2$fit.probit, 10000, TRUE, "binom1.probit"),
-  probit.qgglmm = get.h2.from.qgparams(
-    simulation.res2$fit.probit, "binom1.probit",
-    10000
-  )
-)
-heritability.sim$gaussian.liability <- threshold.scaling.param(simulation.res2$p) *
-  heritability.sim$gaussian
-
-```
+The table gives some indication, but we also want to look qualitatively on the densities. We start by just plotting a grid to compare each Gaussian vs. Probit scale two by two.
 
 ```{r grid plotting}
 plot_grid_of_heritability <- function(heritability, SAVE.PLOT, plot.fn, colorscheme = NA) {
@@ -1035,6 +1054,16 @@ plot.h2.sim$p6 +
   scale_fill_brewer(palette="Spectral",labels = c("Gaussian", "Probit"))
 if(SAVE.PLOT) ggsave("../figures/heritability_simulation_liabscale.pdf")
 ```
+
+Finally, we want to look at DIC values for simulation model. It can't be compared to the song sparrow data directly, but how much the Gaussian and probit differ can be compared.
+
+```{r DIC for simulation}
+data.frame(
+  Gaussian = simulation.res2$fit$dic$dic,
+  Probit = simulation.res2$fit.probit$dic$dic, row.names = "Deviance Information Criteria"
+)
+```
+
 # Fixed effects for simulation
 
 Okay, let's try to add sex covariate to linear predictor:
