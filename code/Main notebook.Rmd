@@ -824,9 +824,9 @@ h2.psi.sim1$noavg <- get.h2.from.qgparams(fit.sim.probit,
 cat("\n-\nRuntime for No averaging:", difftime(Sys.time(), ti,units="secs"),".\n")
 h2.psi.sim1$phi <- get.h2(fit.sim.probit,n.samples,use.scale=T,model="binom1.probit")
 
-# Also fit for smaller V_A, i.e. 0.1
+# Also fit for smaller V_A, i.e. 0.5
 tmp <- simulated.heritability(
-  sigmaA=0.1, linear.predictor = function(u,.) u+rnorm(length(u)),
+  sigmaA=0.5, linear.predictor = function(u,.) u+rnorm(length(u)),
   simulated.formula = simulated.formula,
   probit.model = TRUE)
 # fit.sim.gaussian <- tmp$fit # Might not need this
@@ -882,7 +882,7 @@ plot.qgglmm.heritability(h2.psi.sim1, "simulation",
                          SAVE.PLOT, plot.title=TeX("Simulation, $\\sigma^2_A=1$"),
                          fn.append="va1")
 plot.qgglmm.heritability(h2.psi.sim2, "simulation",
-                         SAVE.PLOT, plot.title=TeX("Simulation, $\\sigma^2_A=0.1$"),
+                         SAVE.PLOT, plot.title=TeX("Simulation, $\\sigma^2_A=0.5$"),
                          fn.append="va0.1")
 
 
@@ -1021,12 +1021,16 @@ plot_grid_of_heritability <- function(heritability, SAVE.PLOT, plot.fn, colorsch
     axis="tblr"
   )
   if (SAVE.PLOT) ggsave(paste0("../figures/", plot.fn), p)
-  list(p1=p1,p2=p2,p3=p3,p4=p4,p5=p5,p6=p6)
+  list(p1=p1,p2=p2,p3=p3,p4=p4,p5=p5,p6=p6,p=p)
   #p # TODO old
 }
 plot.h2.appl <- plot_grid_of_heritability(heritability, SAVE.PLOT, "grid_application_gaussian_vs_binom.pdf", "Dark2")
 # For simulation:
 plot.h2.sim <- plot_grid_of_heritability(heritability.sim, SAVE.PLOT, "grid_simulation_gaussian_vs_binom.pdf", "Spectral")
+
+plot.h2.appl$p
+plot.h2.sim$p
+
 ```
 
 Key takeaways:
