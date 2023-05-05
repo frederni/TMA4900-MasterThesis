@@ -250,6 +250,7 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0
   u <- rbv(pedigree[, c(1, 2, 3)], sigmaA)
 
   simulated.d.ped <- nadiv::prepPed(pedigree, gender = "sex")
+  simulated.d.ped$sex <- simulated.d.ped$sex - 1 # Binarize from (1,2) to (0,1)
   # TODO not sure if nadiv expects binary (0,1) sex or (1,2)
   simulated.Cmatrix <- nadiv::makeAinv(pedigree[, c(1, 2, 3)])$Ainv
 
@@ -264,6 +265,11 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0
   } else if (dichotomize == "round") {
     # This assumes mean of \eta_i is 0
     simulated.response <- ifelse(linear.predictor(u, simulated.d.ped) <= 0, 0, 1)
+  } else if (dichotomize == "round_balanced"){
+    # Get balanced residuals for unbalanced linear predictor
+    cutoff <- mean(linear.predictor(u, simulated.d.ped))
+    simulated.response <- ifelse(linear.predictor(u, simulated.d.ped) <= cutoff, 0, 1)
+    
   } else {
     stop(paste0(
       "Unknown dichotomization method '", dichotomize, "'. ",
@@ -386,7 +392,7 @@ Seems to fit generally well here. Let's quantitatively look into estimates for d
 plot.h2.deviation <- function(dichotomize = "round",
                               title = "Simulation heritability,\ndichotomized with rounding",
                               SAVE.PLOT = T, plot.fn = NA, sigma.scale = "log", lin.pred = NULL,
-                              dynamic.priors = F) {
+                              dynamic.priors = F, simulated.formula = NULL, Ve=NULL, fixedeffects = FALSE) {
   if (sigma.scale == "log") {
     sigmaA.list <- c(1:10 %o% 10^(-3:3)) # Log scale between 10^-3 to 10^3
   } else if (sigma.scale == "small") { # Linear scale between 10^-3 to 0.259
@@ -396,13 +402,14 @@ plot.h2.deviation <- function(dichotomize = "round",
   }
   pc.U.list <- c(rep(10, 10) %o% 10^(-3:3))
 
-  deviation <- c()
+  # deviation <- c()
   estimates <- c()
   latent <- c()
   true.vals <- c()
   est.CI.u <- c()
   est.CI.l <- c()
   iter_num <- 0
+  Ve0 <- Ve
   for (sigmaA in sigmaA.list) {
     cat(">")
     if (dynamic.priors) {
@@ -417,15 +424,16 @@ plot.h2.deviation <- function(dichotomize = "round",
     } else {
       pc.prior <- c(1, 0.05)
     }
-
-    simulated.formula <- simulated.response ~  f(id,
-      model = "generic0",
-      Cmatrix = simulated.Cmatrix,
-      constr = F, # Shouldn't matter
-      hyper = list(
-        prec = list(initial = log(sigmaA), prior = "pc.prec", param = pc.prior) # PC priors
+    if(is.null(simulated.formula)){ #' Defaults eta = a_i + e
+      simulated.formula <- simulated.response ~  f(id,
+        model = "generic0",
+        Cmatrix = simulated.Cmatrix,
+        constr = F, # Shouldn't matter
+        hyper = list(
+          prec = list(initial = log(sigmaA), prior = "pc.prec", param = pc.prior) # PC priors
+        )
       )
-    )
+    }
     if (is.null(lin.pred)) { # The 'usual' linear predictor
       lin.pred <- function(u, .) u + rnorm(length(u))
     }
@@ -437,21 +445,34 @@ plot.h2.deviation <- function(dichotomize = "round",
       pc.prior = pc.prior
     )
 
-    threshold.scaled.h2 <- threshold.scaling.param(result$p) *
-      result$heritability
-    # True h^2 is dependent on linear predictor, i.e. sigmaA/(sigmaA+1) here
-    simulation.h2.true <- sigmaA / (sigmaA + 1)
+    if(is.null(Ve)){
+      #' Fallback
+      Ve <- 1
+    }
+    if(fixedeffects){
+      Ve <- Ve + Ve/(result$p * (1-result$p))
+      posterior <- get.h2(result$fit, 10000, include.fixed=T)
+    } else{
+      posterior <- result$heritability
+    }
+    
+    simulation.h2.true <- sigmaA/ (sigmaA + Ve)
+    # cat("[Debug]: sigmaA", sigmaA, "Ve", Ve, "h^2 true", simulation.h2.true, "\n")
 
-    latent <- c(latent, mean(result$heritability))
+    latent <- c(latent, mean(posterior)) # Observatoin-level
+    threshold.scaled.h2 <- threshold.scaling.param(result$p) * posterior
+    
     true.vals <- c(true.vals, simulation.h2.true)
     estimates.CI <- quantile(threshold.scaled.h2, probs = c(0.025, 0.975))
     estimates <- c(estimates, mean(threshold.scaled.h2))
-    deviation <- c(deviation, simulation.h2.true - mean(threshold.scaled.h2))
+    # deviation <- c(deviation, simulation.h2.true - mean(threshold.scaled.h2))
     est.CI.l <- c(est.CI.l, estimates.CI[1])
     est.CI.u <- c(est.CI.u, estimates.CI[2])
+    # Reset Ve
+    Ve <- Ve0
   }
   res <- data.frame(
-    estimates = estimates, deviation = deviation,
+    estimates = estimates, #deviation = deviation,
     true.vals = true.vals, latent = latent,
     est.CI.l = est.CI.l, est.CI.u = est.CI.u,
     sigmaA = sigmaA.list
@@ -1070,37 +1091,165 @@ data.frame(
 
 # Fixed effects for simulation
 
-Okay, let's try to add sex covariate to linear predictor:
+Okay, let's try to add sex covariate to linear predictor. Assume that (but double-check with someone!)
+$$
+\operatorname{Var}[\beta_{\text{sex}}] = \frac{\operatorname{Var}[\varepsilon]}{\operatorname{Var}[\mathbf{x}_{\text{sex}}]}= \frac{\sigma^2_E}{p(1-p)}.
+$$
 
 ```{r fixed effects simulation}
 
 linear_predictor_fixedeffects <- function(u, simulated.d.ped) {
+  varE = 1
+  betaSex = 100
   out <- c()
-  intercept <- -0.25
-  residuals <- rnorm(length(u))
-  simulated.d.ped$sex <- simulated.d.ped$sex - 1
+  intercept <- 0
+  residuals <- rnorm(length(u), mean=0, sd=sqrt(varE))
   for (idx in seq_along(u)) {
     out <- c(
       out,
-      intercept + 100 * simulated.d.ped$sex[idx] + u[idx] + residuals[idx]
+      intercept + betaSex * simulated.d.ped$sex[idx] + u[idx] + residuals[idx]
+    )
+  }
+  out
+}
+simulated.formula.fixedeffects <- simulated.response ~ sex +
+  f(id,
+    model = "generic0",
+    Cmatrix = simulated.Cmatrix,
+    constr = F, # Shouldn't matter
+    hyper = list(
+      prec = list(initial = log(1 / 10), prior = "pc.prec",
+                  param = c(1, 0.05)) # PC priors
+      )
+    )
+
+# u = a + 100*x_sex + N(0,1) - balanced binary trait
+m <- plot.h2.deviation(
+  dichotomize = "round_balanced", title = TeX("$\\beta_{sex}=100$"),
+  SAVE.PLOT = T, plot.fn = "fixedeffects_beta100", sigma.scale = "log",
+  lin.pred = linear_predictor_fixedeffects, simulated.formula = simulated.formula.fixedeffects,
+  Ve=1, fixedeffects = TRUE
+)
+m$p
+
+# Re-run with smaller magnitude for fixed effect
+linear_predictor_fixedeffects <- function(u, simulated.d.ped) {
+  varE = 1
+  betaSex = 10
+  out <- c()
+  intercept <- -8.5
+  residuals <- rnorm(length(u), mean=0, sd=sqrt(varE))
+  for (idx in seq_along(u)) {
+    out <- c(
+      out,
+      intercept + betaSex * simulated.d.ped$sex[idx] + u[idx] + residuals[idx]
     )
   }
   out
 }
 
-report.simulated.threshold.estimate(
-  NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0.2,
-  linear_predictor_fixedeffects,
-  simulated.formula,
-  Vp = 0.2 + 1 # excluding fixed effects variance
+# u = a + 100*x_sex + N(0,1) - balanced binary trait
+m2 <- plot.h2.deviation(
+  dichotomize = "round_balanced", title = TeX("$\\beta_{sex}=10$"),
+  SAVE.PLOT = T, plot.fn = "fixedeffects_beta10", sigma.scale = "log",
+  lin.pred = linear_predictor_fixedeffects, simulated.formula = simulated.formula.fixedeffects,
+  Ve=1, fixedeffects = TRUE
+)
+m2$p
+# u = a + 100*x_sex + N(0,1) - unbalanced (p~8% depending on simulation)
+
+m3 <- plot.h2.deviation(
+  dichotomize = "round", title = TeX("$\\beta_{sex}=10$"),
+  SAVE.PLOT = T, plot.fn = "fixedeffects_beta10_unbalanced", sigma.scale = "log",
+  lin.pred = linear_predictor_fixedeffects, simulated.formula = simulated.formula.fixedeffects,
+  Ve=1, fixedeffects = TRUE
 )
 
-m <- plot.h2.deviation(
-  dichotomize = "round", title = "Simulation over fixed effects",
-  SAVE.PLOT = F, plot.fn = "fixedeffects", sigma.scale = "log",
-  lin.pred = linear_predictor_fixedeffects
-)
-m$p
+m3$p
+
+sum(linear_predictor_fixedeffects(u,simulated.d.ped) <=0)/900
+
+
+# The one with fixed effects is very "janky", let's average over several runs.
+average.h2.deviation <- function(){
+  
+}
 ```
 
 For sufficiently large choice of $\beta$ corresponding to sex, we get progressively worse results as is expected.
+
+
+# Variations to models
+
+This section implemented the following:
+
+- Include IID N(0,1) noise in Probit simulation models
+- Overdispersion in simulation models, i.e. $V_E >1$.
+
+
+## IID noise to probit simulation
+
+```{r}
+# Add IID N(0,1)
+alternative.probit.sim <- function(sigmaA, linear.predictor, sim.formula=NULL){
+  #' Init
+  idgen <- 100
+  NeNc <- 0.5
+  
+  #' Generate pedigreee
+  ped = generatePedigree(nId=idgen, nGeneration=9, nFather=idgen*NeNc,
+                         nMother=idgen*NeNc)
+  ped <- ped[, c(1,3,2,5)]
+  names(ped) <- c("id","dam","sire","sex")
+  sigmaA = 0.5
+  u <- rbv(ped[, c(1, 2, 3)], sigmaA)
+  simulated.d.ped <- nadiv::prepPed(ped, gender = "sex")
+  simulated.Cmatrix <- nadiv::makeAinv(ped[, c(1, 2, 3)])$Ainv
+  simulated.d.ped$ind <- 1:nrow(simulated.d.ped)
+  
+  #' Generate binary response
+  simulated.response <- ifelse(linear.predictor(u, simulated.d.ped) <= 0, 0, 1)
+  p <- mean(simulated.response)
+  
+  # ' INLA fitting
+  if(is.null(simulated.formula)){
+    simulated.formula <- simulated.response ~ f(id, model = "generic0", Cmatrix = simulated.Cmatrix,
+        constr = F, # Shouldn't matter
+        hyper = list(prec = list(initial = log(1 / 10), prior = "pc.prec",
+                                 param = c(1, 0.05)))) +
+      f(ind, model="iid", constr = T#,
+        # hyper=list(prec=list(initial = 0, fixed = T)) # Comment to use default
+        )
+  }
+  else{
+    environment(simulated.formula) <- environment()
+  }
+
+  
+  fit.probit <- inla(
+    formula = simulated.formula, family = "binomial",
+    data = simulated.d.ped, 
+  )
+  fit.probit
+}
+```
+
+Here, we fit a probit with the formula $y_i = \beta_0 + a_i + \phi_i$, where the last is a random effect. The simulated data has overdisperion in its data via the residual vector being $\mathcal N(0,3)$.
+
+```{r}
+sim.fit.probit <- alternative.probit.sim(0.5, function(u,.) u+rnorm(length(u), 0, sqrt(9)))
+
+testdf = get.h2.from.qgparams(sim.fit.probit,"binom1.probit",10000)
+
+ggplot(data=data.frame(x=testdf)) + geom_density(aes(x=x))
+
+## Plot posterior QGglmm density? And show 'true' value threshold-scaled
+
+```` 
+
+## Overdispersion to simulation models
+
+```{r}
+# I think we have all functions we need to run this?
+# Remember to pass Ve in the function though
+```
