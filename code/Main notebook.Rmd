@@ -50,17 +50,16 @@ library(cowplot)
 library(grid)
 library(extrafont)
 library(reshape2)
-font_import(pattern = "cmunrm.ttf", prompt = F) # LaTeX font
+font_import(pattern = "cmunrm.ttf", prompt = FALSE) # LaTeX font
 loadfonts(device = "win")
 texfont <- "CMU Serif" # Laptop...
-# texfont <- "CMUSerif-Roman" # For other computer...
 theme_set(theme(text = element_text(family = texfont, size = 14)))
 
 # Dataset import
 qg.data.gg.inds <- read.table("../data/qg.data.gg.inds.steffi.txt",
   header = TRUE
 )
-d.ped <- ped.prune.inds <- read.table("../data/ped.prune.inds.steffi.txt",
+d.ped <- read.table("../data/ped.prune.inds.steffi.txt",
   header = TRUE
 )
 d.Q <- read.table("../data/Q.data.steffi.txt", header = TRUE)
@@ -72,7 +71,7 @@ Some global settings:
 ```{r global variables}
 SAVE.PLOT <- TRUE
 n.samples <- 10000
-FORMULA_EXTRA_IID_NOISE <- FALSE # iid N(0,1) noise in songsparrow formula
+FORMULA.EXTRA.IID.NOISE <- FALSE # iid N(0,1) noise in songsparrow formula
 ```
 
 Below we do a couple more preprocessing steps
@@ -94,7 +93,7 @@ For INLA we need ids that run from 1 to the number of individuals
 
 ```{r A matrix}
 d.ped <- nadiv::prepPed(d.ped)
-d.ped$id <- 1:(nrow(d.ped))
+d.ped$id <- seq_len(nrow(d.ped))
 
 # Maps to keep track of the Ninecode to ID relations
 d.map <- d.ped[, c("ninecode", "id")]
@@ -110,8 +109,9 @@ Cmatrix <- nadiv::makeAinv(d.ped[, c("id", "mother.id", "father.id")])$Ainv
 
 # Stores ID twice (to allow for extra IID random effect)
 
-qg.data.gg.inds$id <- d.map[match(qg.data.gg.inds$ninecode, d.map$ninecode), "id"]
-qg.data.gg.inds$u <- 1:nrow(qg.data.gg.inds) # Extra IID effect
+qg.data.gg.inds$id <- d.map[match(qg.data.gg.inds$ninecode, d.map$ninecode),
+                            "id"]
+qg.data.gg.inds$u <- seq_len(qg.data.gg.inds) # Extra IID effect
 ```
 
 
@@ -120,31 +120,36 @@ qg.data.gg.inds$u <- 1:nrow(qg.data.gg.inds) # Extra IID effect
 The general INLA formula is provided below, where `f()` encode the random effect:
 
 ```{r inla forumla}
-
-
-formula.inla.scaled <- surv.ind.to.ad ~ f.coef.sc + g1.sc + natalyr.no.sc + brood.date.sc + sex +
+formula.inla.scaled <- surv.ind.to.ad ~ f.coef.sc + g1.sc + natalyr.no.sc +
+  brood.date.sc + sex +
   f(nestrec, model = "iid", hyper = list(
-    prec = list(initial = log(1 / 0.05), prior = "pc.prec", param = c(1, 0.05)) # PC priors
+    prec = list(
+      initial = log(1 / 0.05),
+      prior = "pc.prec",
+      param = c(1, 0.05)) # PC priors
   )) +
   f(natalyr.id, model = "iid", hyper = list(
-    prec = list(initial = log(1 / 0.25), prior = "pc.prec", param = c(1, 0.05)) # PC priors
+    prec = list(
+      initial = log(1 / 0.25),
+      prior = "pc.prec",
+      param = c(1, 0.05)) # PC priors
   )) +
   f(id,
     model = "generic0", # Here we need to specify the covariance matrix
     Cmatrix = Cmatrix, #    via the inverse (Cmatrix)
-    constr = F, # Doesn't really matter
+    constr = FALSE,
     hyper = list(
-      prec = list(initial = log(1 / 10), prior = "pc.prec", param = c(1, 0.05)) # PC priors
+      prec = list(initial = log(1 / 10), prior = "pc.prec", param = c(1, 0.05))
     )
   )
-if (FORMULA_EXTRA_IID_NOISE) {
+if (FORMULA.EXTRA.IID.NOISE) {
   formula.inla.scaled <- update(
     formula.inla.scaled,
     ~ . + f(u,
-      model = "iid", constr = T,
+      model = "iid", constr = TRUE,
       hyper = list(prec = list(
         initial = log(1),
-        fixed = T
+        fixed = TRUE
       ))
     )
   )
@@ -157,7 +162,7 @@ Now we call INLA models (this takes some time). Note that we pass some control a
 fit.inla.probit <- inla(
   formula = formula.inla.scaled, family = "binomial",
   data = qg.data.gg.inds,
-  control.compute = list(dic = T, return.marginals.predictor = T),
+  control.compute = list(dic = TRUE, return.marginals.predictor = TRUE),
   control.family = list(link = "probit"),
 )
 
@@ -165,7 +170,7 @@ fit.inla.probit <- inla(
 fit.inla.gaussian <- inla(
   formula = formula.inla.scaled, family = "gaussian",
   data = qg.data.gg.inds,
-  control.compute = list(dic = T, cpo = T)
+  control.compute = list(dic = TRUE, cpo = TRUE)
 )
 
 data.frame(
@@ -176,7 +181,8 @@ data.frame(
 # Latent heritability
 
 ```{r naive heritability func}
-get.h2 <- function(inla.fit, n, use.scale = F, model = NA, include.fixed = F) {
+get.h2 <- function(inla.fit, n, use.scale = FALSE, model = NA,
+                   include.fixed = FALSE) {
   #' Get n samples of heritability from INLA fit
   #' h^2 computed as reciprocal of precision for id, over the sum of
   #' (the reciprocal of) all random effects / hyperparameters precisions
@@ -195,7 +201,8 @@ get.h2 <- function(inla.fit, n, use.scale = F, model = NA, include.fixed = F) {
   }
 
   if (use.scale) {
-    scales.dictionary <- list(binom1.probit = 1, binom1.logit = pi^2 / 3, round = 0.25)
+    scales.dictionary <- list(binom1.probit = 1, binom1.logit = pi^2 / 3,
+                              round = 0.25)
     scale.param <- get(model, scales.dictionary)
     denominator <- denominator + scale.param
   }
@@ -208,15 +215,16 @@ threshold.scaling.param <- function(p) {
   # h^2_l = threshold.scaling.param * h^2_obs
   p * (1 - p) / (dnorm(qnorm(p)))^2
 }
-
 ```
 
 # Simulation data
 
 ```{r simulation method}
-simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0.8,
-                                   linear.predictor = NA, simulated.formula = NA,
-                                   dichotomize = "round", pc.prior = NA, probit.model = F, DIC=F) {
+simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9,
+                                   sigmaA = 0.8, linear.predictor = NA,
+                                   simulated.formula = NA,
+                                   dichotomize = "round", pc.prior = NA,
+                                   probit.model = FALSE, DIC = FALSE) {
   #' Generate pedigree, fit gaussian (INLA) model and
   #' Remark: linear.predictor should be a callable and pass (at least) u
   #'
@@ -251,7 +259,6 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0
 
   simulated.d.ped <- nadiv::prepPed(pedigree, gender = "sex")
   simulated.d.ped$sex <- simulated.d.ped$sex - 1 # Binarize from (1,2) to (0,1)
-  # TODO not sure if nadiv expects binary (0,1) sex or (1,2)
   simulated.Cmatrix <- nadiv::makeAinv(pedigree[, c(1, 2, 3)])$Ainv
 
   # Generating "true" y_i
@@ -264,12 +271,15 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0
     )
   } else if (dichotomize == "round") {
     # This assumes mean of \eta_i is 0
-    simulated.response <- ifelse(linear.predictor(u, simulated.d.ped) <= 0, 0, 1)
-  } else if (dichotomize == "round_balanced"){
+    simulated.response <- ifelse(
+      linear.predictor(u, simulated.d.ped) <= 0, 0, 1
+      )
+  } else if (dichotomize == "round_balanced") {
     # Get balanced residuals for unbalanced linear predictor
     cutoff <- mean(linear.predictor(u, simulated.d.ped))
-    simulated.response <- ifelse(linear.predictor(u, simulated.d.ped) <= cutoff, 0, 1)
-    
+    simulated.response <- ifelse(
+      linear.predictor(u, simulated.d.ped) <= cutoff, 0, 1
+      )
   } else {
     stop(paste0(
       "Unknown dichotomization method '", dichotomize, "'. ",
@@ -282,17 +292,16 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0
   # Model fitting LMM for binary trait
   # First reload formula environment to access local variables
   environment(simulated.formula) <- environment()
-  if(DIC){
+  if (DIC) {
     simulated.fit.inla <- inla(
       formula = simulated.formula, family = "gaussian",
-      data = simulated.d.ped, control.compute=list(dic=T)
-      )
-  }
-  else{
+      data = simulated.d.ped, control.compute = list(dic = TRUE)
+    )
+  } else {
     simulated.fit.inla <- inla(
       formula = simulated.formula, family = "gaussian",
       data = simulated.d.ped
-      )
+    )
   }
 
   # Checks for error status in INLA fit,
@@ -303,7 +312,8 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0
   if (probit.model) {
     fit.probit <- inla(
       formula = simulated.formula, family = "binomial",
-      data = simulated.d.ped, control.compute = list(return.marginals.predictor = T, dic=T)
+      data = simulated.d.ped,
+      control.compute = list(return.marginals.predictor = TRUE, dic = TRUE)
     )
   } else {
     fit.probit <- NULL
@@ -325,17 +335,16 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0
 Now we try to run it through the model pipeline. Here we try $\eta_i = u_i + \varepsilon_i$ where residuals have variance $V_E=1$.
 
 ```{r simulation first result}
-
 simulated.formula <- simulated.response ~  f(id,
   model = "generic0",
   Cmatrix = simulated.Cmatrix,
-  constr = F, # Shouldn't matter
+  constr = FALSE,
   hyper = list(
-    prec = list(initial = log(1 / 10), prior = "pc.prec", param = c(1, 0.05)) # PC priors
+    prec = list(initial = log(1 / 10), prior = "pc.prec", param = c(1, 0.05))
   )
 )
 
-report.simulated.threshold.estimate <- function(
+get.simulated.threshold.value <- function(
     NeNc, idgen, nGen, sigmaA, linear.predictor, simulated.formula, Vp = NA) {
   stopifnot("Vp required to get true h^2" = !is.na(Vp))
   sim.result <- simulated.heritability(
@@ -373,7 +382,7 @@ report.simulated.threshold.estimate <- function(
   )
 }
 
-report.simulated.threshold.estimate(
+get.simulated.threshold.value(
   NeNc = 0.5, idgen = 100, nGen = 9, sigmaA = 0.05,
   function(u, .) {
     u + rnorm(length(u))
@@ -381,7 +390,6 @@ report.simulated.threshold.estimate(
   simulated.formula,
   Vp = 0.05 + 1
 )
-
 ```
 
 Seems to fit generally well here. Let's quantitatively look into estimates for different $\sigma^2_A$:
@@ -389,10 +397,12 @@ Seems to fit generally well here. Let's quantitatively look into estimates for d
 ## Performance over varying $V_A$
 
 ```{r sim over varying V_A}
-plot.h2.deviation <- function(dichotomize = "round",
-                              title = "Simulation heritability,\ndichotomized with rounding",
-                              SAVE.PLOT = T, plot.fn = NA, sigma.scale = "log", lin.pred = NULL,
-                              dynamic.priors = F, simulated.formula = NULL, Ve=NULL, fixedeffects = FALSE) {
+plot.h2.deviation <- function(
+    dichotomize = "round",
+    title = "Simulation heritability,\ndichotomized with rounding",
+    SAVE.PLOT = TRUE, plot.fn = NA, sigma.scale = "log", lin.pred = NULL,
+    dynamic.priors = FALSE, simulated.formula = NULL, Ve = NULL,
+    fixedeffects = FALSE) {
   if (sigma.scale == "log") {
     sigmaA.list <- c(1:10 %o% 10^(-3:3)) # Log scale between 10^-3 to 10^3
   } else if (sigma.scale == "small") { # Linear scale between 10^-3 to 0.259
@@ -402,35 +412,33 @@ plot.h2.deviation <- function(dichotomize = "round",
   }
   pc.U.list <- c(rep(10, 10) %o% 10^(-3:3))
 
-  # deviation <- c()
   estimates <- c()
   latent <- c()
   true.vals <- c()
   est.CI.u <- c()
   est.CI.l <- c()
-  iter_num <- 0
+  plist <- c()
+  iter.num <- 0
   Ve0 <- Ve
   for (sigmaA in sigmaA.list) {
     cat(">")
     if (dynamic.priors) {
-      iter_num <- iter_num + 1
-      # PoC: Just base it on current sigmaA
-      # TODO use seq_along to enumerate over different lists
+      iter.num <- iter.num + 1
       if (sigmaA < 1) {
         pc.prior <- c(1, 0.05)
       } else {
-        pc.prior <- c(pc.U.list[iter_num], 0.05)
+        pc.prior <- c(pc.U.list[iter.num], 0.05)
       }
     } else {
       pc.prior <- c(1, 0.05)
     }
-    if(is.null(simulated.formula)){ #' Defaults eta = a_i + e
+    if (is.null(simulated.formula)) { #' Defaults eta = a_i + e
       simulated.formula <- simulated.response ~  f(id,
         model = "generic0",
         Cmatrix = simulated.Cmatrix,
-        constr = F, # Shouldn't matter
+        constr = FALSE, # Shouldn't matter
         hyper = list(
-          prec = list(initial = log(sigmaA), prior = "pc.prec", param = pc.prior) # PC priors
+          prec = list(initial = log(sigmaA), prior = "pc.prec", param = pc.prior)
         )
       )
     }
@@ -445,37 +453,37 @@ plot.h2.deviation <- function(dichotomize = "round",
       pc.prior = pc.prior
     )
 
-    if(is.null(Ve)){
-      #' Fallback
+    if (is.null(Ve)) {
+      # Fallback residual variance
       Ve <- 1
     }
-    if(fixedeffects){
-      Ve <- Ve + Ve/(result$p * (1-result$p))
-      posterior <- get.h2(result$fit, 10000, include.fixed=T)
-    } else{
+    if (fixedeffects) {
+      Ve <- Ve * var(result$simulated.response) # beta^2 * Var(x_fixedeffect)
+      posterior <- get.h2(result$fit, 10000, include.fixed = TRUE)
+    } else {
       posterior <- result$heritability
     }
-    
-    simulation.h2.true <- sigmaA/ (sigmaA + Ve)
-    # cat("[Debug]: sigmaA", sigmaA, "Ve", Ve, "h^2 true", simulation.h2.true, "\n")
+
+    simulation.h2.true <- sigmaA / (sigmaA + Ve)
 
     latent <- c(latent, mean(posterior)) # Observatoin-level
     threshold.scaled.h2 <- threshold.scaling.param(result$p) * posterior
-    
+
     true.vals <- c(true.vals, simulation.h2.true)
     estimates.CI <- quantile(threshold.scaled.h2, probs = c(0.025, 0.975))
     estimates <- c(estimates, mean(threshold.scaled.h2))
-    # deviation <- c(deviation, simulation.h2.true - mean(threshold.scaled.h2))
     est.CI.l <- c(est.CI.l, estimates.CI[1])
     est.CI.u <- c(est.CI.u, estimates.CI[2])
+    plist <- c(plist, result$p)
     # Reset Ve
     Ve <- Ve0
   }
   res <- data.frame(
-    estimates = estimates, #deviation = deviation,
+    estimates = estimates,
     true.vals = true.vals, latent = latent,
     est.CI.l = est.CI.l, est.CI.u = est.CI.u,
-    sigmaA = sigmaA.list
+    sigmaA = sigmaA.list,
+    plist = plist
   )
   # Plotting
   p <- ggplot(data = res, aes(x = sigmaA)) +
@@ -501,10 +509,14 @@ plot.h2.deviation <- function(dichotomize = "round",
     ggsave(paste0(
       "../figures/simulation_deviance_",
       if (!is.na(plot.fn)) plot.fn, ".pdf"
-    ), p + theme(legend.position = "none"), width = 20, height = 20, units = "cm")
+    ), p + theme(legend.position = "none"), width = 20, height = 20,
+    units = "cm")
     # Save legend as separate plot
     p.legend <- cowplot::get_legend(p)
-    pdf("../figures/simulation_deviance_legend.pdf", width = 7.87402, height = 7.87402)
+    pdf(paste0(
+      "../figures/simulation_deviance",
+      if (fixedeffects) "_fixedeffects", "_legend.pdf"
+      ), width = 7.87402, height = 7.87402)
     grid.newpage()
     grid.draw(p.legend)
     dev.off()
@@ -518,13 +530,14 @@ Let's test it out for different values
 ```{r sim results over V_A}
 ### Plots for sigmaA in (10^-3, 10^3)
 
-simulation.res <- plot.h2.deviation(plot.fn = "round", SAVE.PLOT = T, dynamic.priors = T)
+simulation.res <- plot.h2.deviation(plot.fn = "round",
+                                    SAVE.PLOT = TRUE, dynamic.priors = TRUE)
 simulation.res$p
 
 ### Plot for small values og sigmaA, but finer grid
 simulation2.res <- plot.h2.deviation(
-  SAVE.PLOT = T, sigma.scale = "small",
-  plot.fn = "small", dynamic.priors = T
+  SAVE.PLOT = TRUE, sigma.scale = "small",
+  plot.fn = "small", dynamic.priors = TRUE
 )
 simulation2.res$p
 
@@ -541,7 +554,7 @@ plot.h2.deviation(
 We also check what happens if we rerun with $\eta_i=a_i$, i.e. without residuals on underlying scale. Similar results.
 
 ```{r sim without resids}
-report.simulated.threshold.estimate(
+get.simulated.threshold.value(
   0.5, 100, 9, 10, function(u, .) u,
   simulated.formula, 10
 )
@@ -572,10 +585,12 @@ pedigree <- ped0[, c(1, 3, 2)]
 names(pedigree) <- c("id", "dam", "sire")
 simulated.d.ped <- nadiv::prepPed(pedigree)
 plot.A.matrix(simulated.d.ped, title.append = ", 24 generation simulation")
-if (SAVE.PLOT) ggsave("../figures/relatedness-offdiagonal-sim.pdf", width = 20, height = 20, units = "cm")
+if (SAVE.PLOT) ggsave("../figures/relatedness-offdiagonal-sim.pdf",
+                      width = 20, height = 20, units = "cm")
 # Song sparrow data
 plot.A.matrix(d.ped[, c("id", "mother.id", "father.id")], ", Song sparrow data")
-if (SAVE.PLOT) ggsave("../figures/relatedness-offdiagonal-songsparrow.pdf", width = 20, height = 20, units = "cm")
+if (SAVE.PLOT) ggsave("../figures/relatedness-offdiagonal-songsparrow.pdf",
+                      width = 20, height = 20, units = "cm")
 ```
 
 
@@ -590,13 +605,12 @@ For the Gaussian INLA model we also compute PIT (probability integral transform)
 * The third plot is the residuals $y_i - \hat{y_i}$ with 95% credible interval. Here, we see a clear separation of those
 
 ```{r gaussian plotting}
-
 pit.g <- fit.inla.gaussian$cpo$pit # PIT-values
 
 # <Plot 1> Analogous to QQ-plot so should be linear
 # --------
 ggplot(data = data.frame(
-  Quantiles = 1:length(pit.g) / (length(pit.g) + 1), PIT = sort(pit.g)
+  Quantiles = seq_along(length(pit.g)) / (length(pit.g) + 1), PIT = sort(pit.g)
 )) +
   geom_point(aes(x = Quantiles, y = PIT)) +
   ggtitle("Sorted PIT values for Gaussian model")
@@ -623,16 +637,19 @@ if (SAVE.PLOT) ggsave("../figures/PIT-over-fitted.pdf")
 # --------    mean of the fitted values
 df.resid <- qg.data.gg.inds$surv.ind.to.ad -
   fit.inla.gaussian$summary.fitted.values
-rownames(df.resid) <- 1:nrow(df.resid)
+rownames(df.resid) <- seq_len(nrow(df.resid))
 df.resid$class <- qg.data.gg.inds$surv.ind.to.ad
 
-ggplot(data = df.resid, aes(x = as.numeric(row.names(df.resid)), y = mean, color = factor(class))) +
-  geom_errorbar(aes(ymin = `0.025quant`, ymax = `0.975quant`), color = "darkgrey") +
+ggplot(data = df.resid,
+       aes(x = as.numeric(row.names(df.resid)),
+           y = mean, color = factor(class))) +
+  geom_errorbar(aes(ymin = `0.025quant`, ymax = `0.975quant`),
+                color = "darkgrey") +
   geom_point() +
-  scale_color_manual(name = "Juvenile survival", values = c("darkred", "steelblue")) +
+  scale_color_manual(name = "Juvenile survival",
+                     values = c("darkred", "steelblue")) +
   labs(title = "Residuals of Gaussian model", x = "Index", y = "Residuals")
 if (SAVE.PLOT) ggsave("../figures/Residuals-gaussian.pdf")
-
 ```
 
 # Transformations of heritability
@@ -658,19 +675,20 @@ marginal.latent.samples <- function(fit, nsamples) {
   #' from its posterior, with nsamples samples.
   #' Output is list of nsamples elements, with each element in the list being
   #' a vector of the predictor size (i.e. number of observations in data)
-  out_transpose <- matrix(
+  out.transpose <- matrix(
     nrow = nsamples,
     ncol = length(fit$marginals.linear.predictor)
   )
   for (i in seq_along(fit$marginals.linear.predictor)) {
-    xy <- get(names(fit$marginals.linear.predictor)[i], fit$marginals.linear.predictor)
-    out_transpose[, i] <- inla.rmarginal(nsamples, xy)
+    xy <- get(names(fit$marginals.linear.predictor)[i],
+              fit$marginals.linear.predictor)
+    out.transpose[, i] <- inla.rmarginal(nsamples, xy)
   }
 
   # We want list where each list element is one sample, i.e. the transposed
   out <- list()
   for (i in 1:nsamples) {
-    out[[i]] <- out_transpose[i, ]
+    out[[i]] <- out.transpose[i, ]
   }
   out
 }
@@ -681,15 +699,15 @@ report.max.skewness <- function(posterior) {
   #' list containing named "x" and "y" columns
   library(e1071)
   iter <- 1
-  posterior_skews <- c()
+  posterior.skews <- c()
   for (predictor in names(posterior)) {
-    posterior_skews[iter] <- skewness(get(predictor, posterior)[, "x"])
+    posterior.skews[iter] <- skewness(get(predictor, posterior)[, "x"])
     iter <- iter + 1
   }
   cat(
-    "Minimum skew for list no.", which.min(posterior_skews), "with skewness",
-    min(posterior_skews), "and max for list no.", which.max(posterior_skews),
-    "with skewness", max(posterior_skews), ".\n"
+    "Minimum skew for list no.", which.min(posterior.skews), "with skewness",
+    min(posterior.skews), "and max for list no.", which.max(posterior.skews),
+    "with skewness", max(posterior.skews), ".\n"
   )
 }
 ```
@@ -705,8 +723,8 @@ We can now define methods to obtain heritability on the different scales. The fi
 get.h2.from.qgparams <- function(inla.fit,
                                  modelname,
                                  n,
-                                 averaging = F,
-                                 averaging.mode.only = F) {
+                                 averaging = FALSE,
+                                 averaging.mode.only = FALSE) {
   #' Computes a posterior of data-scale heritability (h2) using QGParams
   #'
   #' Params:
@@ -727,16 +745,16 @@ get.h2.from.qgparams <- function(inla.fit,
   if (!averaging) {
     mu <- inla.fit$summary.fixed$mean[1] # Intercept
     va.samples <- 1 / samples.posterior[, "Precision for id"]
-    kwargs <- list(verbose = F)
+    kwargs <- list(verbose = FALSE)
 
     h2.getter <- function(...) {
       get("h2.obs", suppressWarnings(QGparams(...)))
     }
-    posterior <- mapply(h2.getter, mu, va.samples, vp.samples, modelname, MoreArgs = kwargs)
+    posterior <- mapply(h2.getter, mu, va.samples, vp.samples, modelname,
+                        MoreArgs = kwargs)
     return(posterior)
   } else {
     # Average over fixed effects
-    debug_mu <- inla.fit$summary.fixed$mean[1]
     vp.samples <- 0
     df <- data.frame(
       va = as.vector(1 / samples.posterior[, "Precision for id"]),
@@ -745,11 +763,11 @@ get.h2.from.qgparams <- function(inla.fit,
     if (!averaging.mode.only) {
       # Bayesian approach
       df$predict <- marginal.latent.samples(inla.fit, n)
-      
+
       posterior <- do.call("rbind", apply(df, 1, function(row) {
         QGparams(
           predict = row[["predict"]], var.a = row[["va"]], var.p = row[["vp"]],
-          model = modelname, verbose = F
+          model = modelname, verbose = FALSE
         )
       }))
     } else {
@@ -757,205 +775,230 @@ get.h2.from.qgparams <- function(inla.fit,
       posterior <- do.call("rbind", apply(df, 1, function(row) {
         QGparams(
           predict = predict.argument, var.a = row[["va"]], var.p = row[["vp"]],
-          model = modelname, verbose = F
+          model = modelname, verbose = FALSE
         )
       }))
     }
-   return(posterior$h2.obs) 
+    return(posterior$h2.obs)
   }
-
-  
 }
-
 ```
 
-Now we compute the heritability on the different scales - for song sparrow data.
-
-```{r compute h2 application}
-# Compute h2
-heritability <- data.frame(gaussian = get.h2(fit.inla.gaussian, n.samples))
 
 
-heritability$probit.latent <- get.h2(fit.inla.probit, n.samples)
-heritability$probit.scaled <- get.h2(fit.inla.probit, n.samples,
-  use.scale = T,
-  model = "binom1.probit"
-)
-heritability$probit.qgglmm <- get.h2.from.qgparams(
-  fit.inla.probit,
-  "binom1.probit", n.samples
-)
-```
-
-Then, compute the 3 different approaches with `QGglmm` (this is quite slow). We also include time estimates here.
+Compute the 3 different approaches with `QGglmm` (this is quite slow). We also include time estimates here.
 
 ```{r compute h2 application part 2}
-ti = Sys.time()
-h2.psi.sparrow <- data.frame(bayesian=
-                       get.h2.from.qgparams(fit.inla.probit, "binom1.probit",
-                                        n.samples, averaging = T,
-                                        averaging.mode.only = F)
+ti <- Sys.time()
+h2.psi.sparrow <- data.frame(
+  bayesian =
+    get.h2.from.qgparams(fit.inla.probit, "binom1.probit",
+      n.samples,
+      averaging = TRUE,
+      averaging.mode.only = FALSE
+    )
 )
-cat("\n-\nRuntime for Bayesian:", difftime(Sys.time(), ti,units="secs"),"secs.\n")
-ti = Sys.time()
+cat("\n-\nRuntime for Bayesian:",
+    difftime(Sys.time(), ti, units = "secs"), "secs.\n")
+ti <- Sys.time()
 h2.psi.sparrow$frequentist <- get.h2.from.qgparams(fit.inla.probit,
-                                                       "binom1.probit",
-                                                       n.samples,
-                                                       averaging = T,
-                                                       averaging.mode.only = T)
-cat("\n-\nRuntime for Frequentist:", difftime(Sys.time(), ti,units="secs"),"secs.\n")
-ti = Sys.time()
+  "binom1.probit",
+  n.samples,
+  averaging = TRUE,
+  averaging.mode.only = TRUE
+)
+cat("\n-\nRuntime for Frequentist:",
+    difftime(Sys.time(), ti, units = "secs"), "secs.\n")
+ti <- Sys.time()
 h2.psi.sparrow$noavg <- get.h2.from.qgparams(fit.inla.probit,
-                                                       "binom1.probit",
-                                                       n.samples,
-                                                       averaging = F)
-cat("\n-\nRuntime for No averaging:", difftime(Sys.time(), ti,units="secs"),"secs.\n")
+  "binom1.probit",
+  n.samples,
+  averaging = FALSE
+)
+cat("\n-\nRuntime for No averaging:",
+    difftime(Sys.time(), ti, units = "secs"), "secs.\n")
 h2.psi.sparrow$phi <- heritability$probit.scaled
 ```
 
-We do the same for simulation
+We do the same for simulation data
 ```{r compute h2 simulation}
-
 # We store an instance of a gaussian and probit model with V_A = 1
 tmp <- simulated.heritability(
-  sigmaA=1, linear.predictor = function(u,.) u+rnorm(length(u)),
+  sigmaA = 1, linear.predictor = function(u, .) u + rnorm(length(u)),
   simulated.formula = simulated.formula,
-  probit.model = TRUE)
+  probit.model = TRUE
+)
 fit.sim.probit <- tmp$fit.probit
 
-ti = Sys.time()
-h2.psi.sim1 <- data.frame(bayesian=
-                       get.h2.from.qgparams(fit.sim.probit, "binom1.probit",
-                                        n.samples, averaging = T,
-                                        averaging.mode.only = F)
+ti <- Sys.time()
+h2.psi.sim1 <- data.frame(
+  bayesian =
+    get.h2.from.qgparams(fit.sim.probit, "binom1.probit",
+      n.samples,
+      averaging = TRUE,
+      averaging.mode.only = FALSE
+    )
 )
-cat("\n-\nRuntime for Bayesian:", difftime(Sys.time(), ti,units="secs"),".\n")
-ti = Sys.time()
+cat("\n-\nRuntime for Bayesian:",
+    difftime(Sys.time(), ti, units = "secs"), ".\n")
+ti <- Sys.time()
 h2.psi.sim1$frequentist <- get.h2.from.qgparams(fit.sim.probit,
-                                                       "binom1.probit",
-                                                       n.samples,
-                                                       averaging = T,
-                                                       averaging.mode.only = T)
-cat("\n-\nRuntime for Frequentist:", difftime(Sys.time(), ti,units="secs"),".\n")
-ti = Sys.time()
+  "binom1.probit",
+  n.samples,
+  averaging = TRUE,
+  averaging.mode.only = TRUE
+)
+cat("\n-\nRuntime for Frequentist:",
+    difftime(Sys.time(), ti, units = "secs"), ".\n")
+ti <- Sys.time()
 h2.psi.sim1$noavg <- get.h2.from.qgparams(fit.sim.probit,
-                                                       "binom1.probit",
-                                                       n.samples,
-                                                       averaging = F)
-cat("\n-\nRuntime for No averaging:", difftime(Sys.time(), ti,units="secs"),".\n")
-h2.psi.sim1$phi <- get.h2(fit.sim.probit,n.samples,use.scale=T,model="binom1.probit")
+  "binom1.probit",
+  n.samples,
+  averaging = FALSE
+)
+cat("\n-\nRuntime for No averaging:",
+    difftime(Sys.time(), ti, units = "secs"), ".\n")
+h2.psi.sim1$phi <- get.h2(fit.sim.probit, n.samples,
+                          use.scale = TRUE, model = "binom1.probit")
 
 # Also fit for smaller V_A, i.e. 0.5
 tmp <- simulated.heritability(
-  sigmaA=0.5, linear.predictor = function(u,.) u+rnorm(length(u)),
+  sigmaA = 0.5, linear.predictor = function(u, .) u + rnorm(length(u)),
   simulated.formula = simulated.formula,
-  probit.model = TRUE)
-# fit.sim.gaussian <- tmp$fit # Might not need this
+  probit.model = TRUE
+)
+
 fit.sim.probit <- tmp$fit.probit
 
-h2.psi.sim2 <- data.frame(bayesian=
-                       get.h2.from.qgparams(fit.sim.probit, "binom1.probit",
-                                        n.samples, averaging = T,
-                                        averaging.mode.only = F)
+h2.psi.sim2 <- data.frame(
+  bayesian =
+    get.h2.from.qgparams(fit.sim.probit, "binom1.probit",
+      n.samples,
+      averaging = TRUE,
+      averaging.mode.only = FALSE
+    )
 )
 h2.psi.sim2$frequentist <- get.h2.from.qgparams(fit.sim.probit,
-                                                       "binom1.probit",
-                                                       n.samples,
-                                                       averaging = T,
-                                                       averaging.mode.only = T)
+  "binom1.probit",
+  n.samples,
+  averaging = TRUE,
+  averaging.mode.only = TRUE
+)
 h2.psi.sim2$noavg <- get.h2.from.qgparams(fit.sim.probit,
-                                                       "binom1.probit",
-                                                       n.samples,
-                                                       averaging = F)
-h2.psi.sim2$phi <- get.h2(fit.sim.probit,n.samples,use.scale=T,model="binom1.probit")
-
+  "binom1.probit",
+  n.samples,
+  averaging = FALSE
+)
+h2.psi.sim2$phi <- get.h2(fit.sim.probit, n.samples, use.scale = TRUE,
+                          model = "binom1.probit")
 ```
 
 Let's see how it looks like.
 ```{r plot h2 qgglmm methods}
-
-plot.qgglmm.heritability <- function(h2.psi, dataset, SAVE.PLOT, plot.title=NA, fn.append=NULL){
+plot.qgglmm.heritability <- function(h2.psi, dataset, SAVE.PLOT,
+                                     plot.title = NA, fn.append = NULL) {
   #' Similar function for heritability loaded into memory
-  color.map = c(application="Dark2", simulation="Spectral")
+  color.map <- c(application = "Dark2", simulation = "Spectral")
   stopifnot(dataset %in% names(color.map))
-  p <- ggplot(data=melt(h2.psi)) +
-    geom_density(aes(x=value, fill=variable), alpha=0.5) +
-    scale_fill_brewer(palette=color.map[dataset],
+  p <- ggplot(data = melt(h2.psi)) +
+    geom_density(aes(x = value, fill = variable), alpha = 0.5) +
+    scale_fill_brewer(
+      palette = color.map[dataset],
       labels = c(
-        expression(h[Psi]^2 *", Bayesian"),
-        expression(h[Psi]^2 *", Frequentist"),
-        expression(h[Psi]^2 *", No averaging"),
+        expression(h[Psi]^2 * ", Bayesian"),
+        expression(h[Psi]^2 * ", Frequentist"),
+        expression(h[Psi]^2 * ", No averaging"),
         expression(h[Phi]^2)
-        )
-      ) + ylab("Density") + xlab("Heritability") +
-    theme(legend.text.align = 0, legend.title=element_blank()) +
-    if(!is.na(plot.title)) ggtitle(plot.title)
-  
-  if(SAVE.PLOT){
-    ggsave(paste0("../figures/qgglmm-comparison-",dataset,fn.append,".pdf"),p)
+      )
+    ) +
+    ylab("Density") +
+    xlab("Heritability") +
+    theme(legend.text.align = 0, legend.title = element_blank()) +
+    if (!is.na(plot.title)) ggtitle(plot.title)
+
+  if (SAVE.PLOT) {
+    ggsave(paste0("../figures/qgglmm-comparison-",
+                  dataset, fn.append, ".pdf"), p)
   }
   p
 }
 
 plot.qgglmm.heritability(h2.psi.sparrow, "application",
-                         SAVE.PLOT, plot.title="Application")
+  SAVE.PLOT,
+  plot.title = "Application"
+)
 plot.qgglmm.heritability(h2.psi.sim1, "simulation",
-                         SAVE.PLOT, plot.title=TeX("Simulation, $\\sigma^2_A=1$"),
-                         fn.append="va1")
+  SAVE.PLOT,
+  plot.title = TeX("Simulation, $\\sigma^2_A=1$"),
+  fn.append = "va1"
+)
 plot.qgglmm.heritability(h2.psi.sim2, "simulation",
-                         SAVE.PLOT, plot.title=TeX("Simulation, $\\sigma^2_A=0.5$"),
-                         fn.append="va0.1")
-
-
+  SAVE.PLOT,
+  plot.title = TeX("Simulation, $\\sigma^2_A=0.5$"),
+  fn.append = "va0.1"
+)
 ```
+
 ## Compare different scales
 
-First, we fit the simulation probit model and get simulation-based heritability on all scales.
+First, we fit the simulation probit model and get simulation-based heritability on all scales. Now we compute the heritability on the different scales - for song sparrow data. First we make a function to help us obtain all heritability scales in a dataframe.
+
+```{r h2 scale helper}
+get.all.heritabilities <- function(fit.gaussian, fit.probit, p, n,
+                                   fixed = FALSE) {
+  out <- data.frame(gaussian = get.h2(fit.gaussian, n, include.fixed = fixed))
+  out$gaussian.liability <- threshold.scaling.param(p) * out$gaussian
+  out$probit.latent <- get.h2(fit.probit, n, include.fixed = fixed)
+  out$probit.scaled <- get.h2(fit.probit, n, model = "binom1.probit",
+                              use.scale = TRUE, include.fixed = fixed)
+  out$probit.qgglmm <- get.h2.from.qgparams(fit.probit, "binom1.probit", n,
+                                            averaging = TRUE)
+  out
+}
+``` 
+
+```{r compute h2 application}
+# Application data
+heritability <- get.all.heritabilities(
+  fit.inla.gaussian, fit.inla.probit, mean(qg.data.gg.inds$surv.ind.to.ad),
+  n.samples,
+  fixed = FALSE
+)
+```
 
 ```{r liability estimates}
-
-heritability$gaussian.liability <- threshold.scaling.param(
-  mean(qg.data.gg.inds$surv.ind.to.ad)
-) * heritability$gaussian
 simulation.res2 <- simulated.heritability(0.5, 100, 9,
   sigmaA = 0.5,
   linear.predictor = function(u, .) u + rnorm(length(u)),
   simulated.formula = simulated.formula,
-  probit.model = TRUE, DIC=TRUE
+  probit.model = TRUE, DIC = TRUE
 )
-heritability.sim <- data.frame(
-  gaussian = simulation.res2$heritability,
-  probit.latent = get.h2(simulation.res2$fit.probit, 10000),
-  probit.scaled = get.h2(simulation.res2$fit.probit, 10000, TRUE, "binom1.probit"),
-  probit.qgglmm = get.h2.from.qgparams(
-    simulation.res2$fit.probit, "binom1.probit",
-    10000
-  )
+heritability.sim <- get.all.heritabilities(
+  simulation.res2$fit, simulation.res2$fit.probit,
+  simulation.res2$p, n.samples,
+  fixed = FALSE
 )
-heritability.sim$gaussian.liability <- threshold.scaling.param(simulation.res2$p) *
-  heritability.sim$gaussian
-
 ```
 
 Method to export heritability estimates in a TeX table
 
 ```{r print latex table}
-get_mode <- function(vec) {
+get.mode <- function(vec) {
   d <- density(vec)
   d$x[which.max(d$y)]
 }
 
 
-print_one_metric <- function(fit, param, digits) {
+print.one.metric <- function(fit, param, digits) {
   paste(
     round(mean(get(param, fit)), digits), " (",
-    round(get_mode(get(param, fit)), digits), ")\\newline $\\pm$ ",
+    round(get.mode(get(param, fit)), digits), ")\\newline $\\pm$ ",
     round(sd(get(param, fit)), digits),
     sep = ""
   )
 }
 
-print_heritability_table <- function(digits, h2appl, h2sim) {
+print.heritability.table <- function(digits, h2appl, h2sim) {
   #' `digits` is the number of significant digits
   #' Prints tabularx-table of heritability with posterior mean, posterior mode
   #' and standard deviation. Does it for logit, probit and Gaussian.
@@ -968,20 +1011,21 @@ print_heritability_table <- function(digits, h2appl, h2sim) {
     "\\hline \n"
   )
   main <- paste(
-    "Gaussian $h^2_{obs}$ &", print_one_metric(h2appl, "gaussian", digits),
-    "&", print_one_metric(h2sim, "gaussian", digits),
+    "Gaussian $h^2_{obs}$ &", print.one.metric(h2appl, "gaussian", digits),
+    "&", print.one.metric(h2sim, "gaussian", digits),
     "\\\\ \n",
-    "Gaussian $h^2_{liab}$ &", print_one_metric(h2appl, "gaussian.liability", digits),
-    "&", print_one_metric(h2sim, "gaussian.liability", digits),
+    "Gaussian $h^2_{liab}$ &", print.one.metric(h2appl, "gaussian.liability",
+                                                digits),
+    "&", print.one.metric(h2sim, "gaussian.liability", digits),
     "\\\\ \n",
-    "Probit $h^2_{lat}$ &", print_one_metric(h2appl, "probit.latent", digits),
-    "&", print_one_metric(h2sim, "probit.latent", digits),
+    "Probit $h^2_{lat}$ &", print.one.metric(h2appl, "probit.latent", digits),
+    "&", print.one.metric(h2sim, "probit.latent", digits),
     "\\\\ \n",
-    "Probit $h^2_{\\Phi}$ &", print_one_metric(h2appl, "probit.scaled", digits),
-    "&", print_one_metric(h2sim, "probit.scaled", digits),
+    "Probit $h^2_{\\Phi}$ &", print.one.metric(h2appl, "probit.scaled", digits),
+    "&", print.one.metric(h2sim, "probit.scaled", digits),
     "\\\\ \n",
-    "Probit $h^2_{\\Psi}$ &", print_one_metric(h2appl, "probit.qgglmm", digits),
-    "&", print_one_metric(h2sim, "probit.qgglmm", digits),
+    "Probit $h^2_{\\Psi}$ &", print.one.metric(h2appl, "probit.qgglmm", digits),
+    "&", print.one.metric(h2sim, "probit.qgglmm", digits),
     "\n"
   )
   footer <- paste("\\end{tabularx}",
@@ -993,65 +1037,80 @@ print_heritability_table <- function(digits, h2appl, h2sim) {
 
   cat(header, main, footer, sep = "\n")
 }
-print_heritability_table(4, heritability, heritability.sim)
+print.heritability.table(4, heritability, heritability.sim)
 ```
 
 The table gives some indication, but we also want to look qualitatively on the densities. We start by just plotting a grid to compare each Gaussian vs. Probit scale two by two.
 
 ```{r grid plotting}
-plot_grid_of_heritability <- function(heritability, SAVE.PLOT, plot.fn, colorscheme = NA) {
+plot_grid_of_heritability <- function(heritability, SAVE.PLOT, plot.fn,
+                                      colorscheme = NA) {
   p1 <- ggplot() +
-    geom_density(data = melt(heritability[, c("gaussian", "probit.latent")]), aes(x = value, fill = variable), alpha = 0.5) +
+    geom_density(data = melt(heritability[, c("gaussian", "probit.latent")]),
+                 aes(x = value, fill = variable), alpha = 0.5) +
     theme(legend.position = "none", axis.title = element_blank()) +
     labs(title = TeX("$h^2_{obs}$ vs. $h^2_{lat}$")) +
     if (!is.na(colorscheme)) scale_fill_brewer(palette = colorscheme)
   p2 <- ggplot() +
-    geom_density(data = melt(heritability[, c("gaussian.liability", "probit.latent")]), aes(x = value, fill = variable), alpha = 0.5) +
+    geom_density(data = melt(heritability[, c("gaussian.liability",
+                                              "probit.latent")]),
+                 aes(x = value, fill = variable), alpha = 0.5) +
     theme(legend.position = "none", axis.title = element_blank()) +
     labs(title = TeX("$h^2_{liab}$ vs. $h^2_{lat}$")) +
     if (!is.na(colorscheme)) scale_fill_brewer(palette = colorscheme)
   p3 <- ggplot() +
-    geom_density(data = melt(heritability[, c("gaussian", "probit.qgglmm")]), aes(x = value, fill = variable), alpha = 0.5) +
+    geom_density(data = melt(heritability[, c("gaussian",
+                                              "probit.qgglmm")]),
+                 aes(x = value, fill = variable), alpha = 0.5) +
     theme(legend.position = "none", axis.title = element_blank()) +
     labs(title = TeX("$h^2_{obs}$ vs. $h^2_{\\Psi}$")) +
     if (!is.na(colorscheme)) scale_fill_brewer(palette = colorscheme)
   p4 <- ggplot() +
-    geom_density(data = melt(heritability[, c("gaussian.liability", "probit.qgglmm")]), aes(x = value, fill = variable), alpha = 0.5) +
+    geom_density(data = melt(heritability[, c("gaussian.liability",
+                                              "probit.qgglmm")]),
+                 aes(x = value, fill = variable), alpha = 0.5) +
     theme(legend.position = "none", axis.title = element_blank()) +
     labs(title = TeX("$h^2_{liab}$ vs. $h^2_{\\Psi}$")) +
     if (!is.na(colorscheme)) scale_fill_brewer(palette = colorscheme)
   p5 <- ggplot() +
-    geom_density(data = melt(heritability[, c("gaussian", "probit.scaled")]), aes(x = value, fill = variable), alpha = 0.5) +
+    geom_density(data = melt(heritability[, c("gaussian",
+                                              "probit.scaled")]),
+                 aes(x = value, fill = variable), alpha = 0.5) +
     theme(legend.position = "none", axis.title = element_blank()) +
     labs(title = TeX("$h^2_{obs}$ vs. $h^2_{\\Phi}$")) +
     if (!is.na(colorscheme)) scale_fill_brewer(palette = colorscheme)
   p6 <- ggplot() +
-    geom_density(data = melt(heritability[, c("gaussian.liability", "probit.scaled")]), aes(x = value, fill = variable), alpha = 0.5) +
+    geom_density(data = melt(heritability[, c("gaussian.liability",
+                                              "probit.scaled")]),
+                 aes(x = value, fill = variable), alpha = 0.5) +
     theme(legend.position = "none", axis.title = element_blank()) +
     labs(title = TeX("$h^2_{liab}$ vs. $h^2_{\\Phi}$")) +
     if (!is.na(colorscheme)) scale_fill_brewer(palette = colorscheme)
   p <- plot_grid(p1, p3, p5, p2, p4, p6, ggplot() +
-      theme_void(),
-    get_legend(
-      ggplot(data.frame(v = c("Gaussian", "Probit"), x = c(0, 0))) +
-        geom_density(aes(x = x, fill = v), alpha = 0.5) +
-        scale_fill_discrete(breaks = c("Gaussian", "Probit")) +
-        theme(legend.title = element_blank()) +
-        if (!is.na(colorscheme)) scale_fill_brewer(palette = colorscheme)
-    ),
-    axis="tblr"
+    theme_void(),
+  get_legend(
+    ggplot(data.frame(v = c("Gaussian", "Probit"), x = c(0, 0))) +
+      geom_density(aes(x = x, fill = v), alpha = 0.5) +
+      scale_fill_discrete(breaks = c("Gaussian", "Probit")) +
+      theme(legend.title = element_blank()) +
+      if (!is.na(colorscheme)) scale_fill_brewer(palette = colorscheme)
+  ),
+  axis = "tblr"
   )
   if (SAVE.PLOT) ggsave(paste0("../figures/", plot.fn), p)
-  list(p1=p1,p2=p2,p3=p3,p4=p4,p5=p5,p6=p6,p=p)
-  #p # TODO old
+  list(p1 = p1, p2 = p2, p3 = p3, p4 = p4, p5 = p5, p6 = p6, p = p)
+  # p # TODO old
 }
-plot.h2.appl <- plot_grid_of_heritability(heritability, SAVE.PLOT, "grid_application_gaussian_vs_binom.pdf", "Dark2")
+plot.h2.appl <- plot_grid_of_heritability(
+  heritability, SAVE.PLOT, "grid_application_gaussian_vs_binom.pdf",
+  "Dark2")
 # For simulation:
-plot.h2.sim <- plot_grid_of_heritability(heritability.sim, SAVE.PLOT, "grid_simulation_gaussian_vs_binom.pdf", "Spectral")
+plot.h2.sim <- plot_grid_of_heritability(
+  heritability.sim, SAVE.PLOT, "grid_simulation_gaussian_vs_binom.pdf",
+  "Spectral")
 
 plot.h2.appl$p
 plot.h2.sim$p
-
 ```
 
 Key takeaways:
@@ -1062,22 +1121,22 @@ The ones we really care about, is plot $(1,2)$ (p3) and $(2,3)$ (p6), so let's e
 
 ```{r key plots heritability scales}
 plot.h2.appl$p3 +
-  theme(legend.position = "right",legend.title = element_blank()) +
-  scale_fill_brewer(palette="Dark2",labels = c("Gaussian", "Probit"))
-if(SAVE.PLOT) ggsave("../figures/heritability_application_obsscale.pdf")
+  theme(legend.position = "right", legend.title = element_blank()) +
+  scale_fill_brewer(palette = "Dark2", labels = c("Gaussian", "Probit"))
+if (SAVE.PLOT) ggsave("../figures/heritability_application_obsscale.pdf")
 plot.h2.appl$p6 +
-  theme(legend.position = "right",legend.title = element_blank()) +
-  scale_fill_brewer(palette="Dark2",labels = c("Gaussian", "Probit"))
-if(SAVE.PLOT) ggsave("../figures/heritability_application_liabscale.pdf")
+  theme(legend.position = "right", legend.title = element_blank()) +
+  scale_fill_brewer(palette = "Dark2", labels = c("Gaussian", "Probit"))
+if (SAVE.PLOT) ggsave("../figures/heritability_application_liabscale.pdf")
 
 plot.h2.sim$p3 +
-  theme(legend.position = "right",legend.title = element_blank()) +
-  scale_fill_brewer(palette="Spectral",labels = c("Gaussian", "Probit"))
-if(SAVE.PLOT) ggsave("../figures/heritability_simulation_obsscale.pdf")
+  theme(legend.position = "right", legend.title = element_blank()) +
+  scale_fill_brewer(palette = "Spectral", labels = c("Gaussian", "Probit"))
+if (SAVE.PLOT) ggsave("../figures/heritability_simulation_obsscale.pdf")
 plot.h2.sim$p6 +
-  theme(legend.position = "right",legend.title = element_blank()) +
-  scale_fill_brewer(palette="Spectral",labels = c("Gaussian", "Probit"))
-if(SAVE.PLOT) ggsave("../figures/heritability_simulation_liabscale.pdf")
+  theme(legend.position = "right", legend.title = element_blank()) +
+  scale_fill_brewer(palette = "Spectral", labels = c("Gaussian", "Probit"))
+if (SAVE.PLOT) ggsave("../figures/heritability_simulation_liabscale.pdf")
 ```
 
 Finally, we want to look at DIC values for simulation model. It can't be compared to the song sparrow data directly, but how much the Gaussian and probit differ can be compared.
@@ -1085,25 +1144,25 @@ Finally, we want to look at DIC values for simulation model. It can't be compare
 ```{r DIC for simulation}
 data.frame(
   Gaussian = simulation.res2$fit$dic$dic,
-  Probit = simulation.res2$fit.probit$dic$dic, row.names = "Deviance Information Criteria"
+  Probit = simulation.res2$fit.probit$dic$dic,
+  row.names = "Deviance Information Criteria"
 )
 ```
 
 # Fixed effects for simulation
 
-Okay, let's try to add sex covariate to linear predictor. Assume that (but double-check with someone!)
+Okay, let's try to add sex covariate to linear predictor. We use that
 $$
-\operatorname{Var}[\beta_{\text{sex}}] = \frac{\operatorname{Var}[\varepsilon]}{\operatorname{Var}[\mathbf{x}_{\text{sex}}]}= \frac{\sigma^2_E}{p(1-p)}.
+\operatorname{Var}[\beta_{\text{sex}}\mathbf{x}_{\text{sex}}] = \beta_{\text{sex}}^2  \operatorname{Var}[\mathbf{x}_{\text{sex}}]
 $$
 
 ```{r fixed effects simulation}
-
 linear_predictor_fixedeffects <- function(u, simulated.d.ped) {
-  varE = 1
-  betaSex = 100
+  varE <- 1
+  betaSex <- 100
   out <- c()
   intercept <- 0
-  residuals <- rnorm(length(u), mean=0, sd=sqrt(varE))
+  residuals <- rnorm(length(u), mean = 0, sd = sqrt(varE))
   for (idx in seq_along(u)) {
     out <- c(
       out,
@@ -1116,29 +1175,32 @@ simulated.formula.fixedeffects <- simulated.response ~ sex +
   f(id,
     model = "generic0",
     Cmatrix = simulated.Cmatrix,
-    constr = F, # Shouldn't matter
+    constr = FALSE,
     hyper = list(
-      prec = list(initial = log(1 / 10), prior = "pc.prec",
-                  param = c(1, 0.05)) # PC priors
-      )
+      prec = list(
+        initial = log(1 / 10), prior = "pc.prec",
+        param = c(1, 0.05)
+      ) # PC priors
     )
+  )
 
 # u = a + 100*x_sex + N(0,1) - balanced binary trait
 m <- plot.h2.deviation(
   dichotomize = "round_balanced", title = TeX("$\\beta_{sex}=100$"),
-  SAVE.PLOT = T, plot.fn = "fixedeffects_beta100", sigma.scale = "log",
-  lin.pred = linear_predictor_fixedeffects, simulated.formula = simulated.formula.fixedeffects,
-  Ve=1, fixedeffects = TRUE
+  SAVE.PLOT = TRUE, plot.fn = "fixedeffects_beta100", sigma.scale = "log",
+  lin.pred = linear_predictor_fixedeffects,
+  simulated.formula = simulated.formula.fixedeffects,
+  Ve = 100^2, fixedeffects = TRUE
 )
 m$p
 
 # Re-run with smaller magnitude for fixed effect
 linear_predictor_fixedeffects <- function(u, simulated.d.ped) {
-  varE = 1
-  betaSex = 10
+  varE <- 1
+  betaSex <- 10
   out <- c()
-  intercept <- -8.5
-  residuals <- rnorm(length(u), mean=0, sd=sqrt(varE))
+  intercept <- 0 #-8.5
+  residuals <- rnorm(length(u), mean = 0, sd = sqrt(varE))
   for (idx in seq_along(u)) {
     out <- c(
       out,
@@ -1148,108 +1210,177 @@ linear_predictor_fixedeffects <- function(u, simulated.d.ped) {
   out
 }
 
-# u = a + 100*x_sex + N(0,1) - balanced binary trait
+# u = a + 10*x_sex + N(0,1) - balanced binary trait
 m2 <- plot.h2.deviation(
   dichotomize = "round_balanced", title = TeX("$\\beta_{sex}=10$"),
-  SAVE.PLOT = T, plot.fn = "fixedeffects_beta10", sigma.scale = "log",
-  lin.pred = linear_predictor_fixedeffects, simulated.formula = simulated.formula.fixedeffects,
-  Ve=1, fixedeffects = TRUE
+  SAVE.PLOT = TRUE, plot.fn = "fixedeffects_beta10", sigma.scale = "log",
+  lin.pred = linear_predictor_fixedeffects,
+  simulated.formula = simulated.formula.fixedeffects,
+  Ve = 10^2, fixedeffects = TRUE
 )
 m2$p
 # u = a + 100*x_sex + N(0,1) - unbalanced (p~8% depending on simulation)
 
 m3 <- plot.h2.deviation(
-  dichotomize = "round", title = TeX("$\\beta_{sex}=10$"),
-  SAVE.PLOT = T, plot.fn = "fixedeffects_beta10_unbalanced", sigma.scale = "log",
-  lin.pred = linear_predictor_fixedeffects, simulated.formula = simulated.formula.fixedeffects,
-  Ve=1, fixedeffects = TRUE
+  dichotomize = "round",
+  title = "Simulation heritability for \nfixed effects model",
+  SAVE.PLOT = TRUE, plot.fn = "fixedeffects_beta10_unbalanced",
+  sigma.scale = "log",
+  lin.pred = linear_predictor_fixedeffects,
+  simulated.formula = simulated.formula.fixedeffects,
+  Ve = 10^2, fixedeffects = TRUE
 )
-
 m3$p
+# How unbalanced is the response?
 
-sum(linear_predictor_fixedeffects(u,simulated.d.ped) <=0)/900
-
-
-# The one with fixed effects is very "janky", let's average over several runs.
-average.h2.deviation <- function(){
-  
-}
+summary(m3$res$plist)
 ```
 
 For sufficiently large choice of $\beta$ corresponding to sex, we get progressively worse results as is expected.
 
+## Fixed effect model performance
+Another thing we can check out, is how the grid plots of heritability scales would look like if we use a Gaussian and probit model with (somewhat dominating) fixed effect. We do that here:
 
-# Variations to models
+```{r}
+sA <- 500
+fits <- simulated.heritability(
+  idgen = 300,
+  sigmaA = sA, linear.predictor = linear_predictor_fixedeffects,
+  simulated.formula = simulated.formula.fixedeffects, probit.model = TRUE
+)
+h2.sim.fixed <- get.all.heritabilities(fits$fit, fits$fit.probit, fits$p,
+                                       n.samples, fixed = TRUE)
+h2.true <- sA / (sA + 1 + 10^2 * var(fits$simulated.response)) *
+  1 / threshold.scaling.param(fits$p)
+ggplot(melt(h2.sim.fixed[, c("gaussian", "probit.qgglmm")])) +
+  geom_density(aes(x = value, fill = variable), alpha = 0.5) +
+  geom_vline(aes(xintercept = h2.true, color = "true"), lwd = 1,
+             linetype = "dashed") +
+  scale_color_manual(name = "", labels = TeX("True $h^2_{obs}$"),
+                     values = c(true = "darkred")) +
+  scale_fill_discrete(
+    name = "Model",
+    labels = c(TeX("Gaussian $h^2_{obs}"), TeX("Probit $h^2_\\Psi$"))) +
+  theme(legend.text.align = 0) +
+  xlab("Heritability") +
+  ylab("Density")
+if (SAVE.PLOT) ggsave("../figures/fixedeffects_gaussian_and_probit.pdf")
+```
 
-This section implemented the following:
 
-- Include IID N(0,1) noise in Probit simulation models
-- Overdispersion in simulation models, i.e. $V_E >1$.
-
-
-## IID noise to probit simulation
+# IID noise to probit simulation
 
 ```{r}
 # Add IID N(0,1)
-alternative.probit.sim <- function(sigmaA, linear.predictor, sim.formula=NULL){
+alternative.probit.sim <- function(sigmaA, linear.predictor,
+                                   fit.gaussian = NULL) {
   #' Init
   idgen <- 100
   NeNc <- 0.5
-  
-  #' Generate pedigreee
-  ped = generatePedigree(nId=idgen, nGeneration=9, nFather=idgen*NeNc,
-                         nMother=idgen*NeNc)
-  ped <- ped[, c(1,3,2,5)]
-  names(ped) <- c("id","dam","sire","sex")
-  sigmaA = 0.5
+  nGen <- 9
+
+  #' Generate pedigree
+  ped <- generatePedigree(
+    nId = idgen, nGeneration = nGen, nFather = idgen * NeNc,
+    nMother = idgen * NeNc
+  )
+  ped <- ped[, c(1, 3, 2, 5)]
+  names(ped) <- c("id", "dam", "sire", "sex")
   u <- rbv(ped[, c(1, 2, 3)], sigmaA)
   simulated.d.ped <- nadiv::prepPed(ped, gender = "sex")
   simulated.Cmatrix <- nadiv::makeAinv(ped[, c(1, 2, 3)])$Ainv
-  simulated.d.ped$ind <- 1:nrow(simulated.d.ped)
-  
+  simulated.d.ped$ind <- seq_len(nrow(simulated.d.ped))
+
   #' Generate binary response
   simulated.response <- ifelse(linear.predictor(u, simulated.d.ped) <= 0, 0, 1)
   p <- mean(simulated.response)
-  
+
   # ' INLA fitting
-  if(is.null(simulated.formula)){
-    simulated.formula <- simulated.response ~ f(id, model = "generic0", Cmatrix = simulated.Cmatrix,
-        constr = F, # Shouldn't matter
-        hyper = list(prec = list(initial = log(1 / 10), prior = "pc.prec",
-                                 param = c(1, 0.05)))) +
-      f(ind, model="iid", constr = T#,
-        # hyper=list(prec=list(initial = 0, fixed = T)) # Comment to use default
-        )
-  }
-  else{
-    environment(simulated.formula) <- environment()
+  formula.overdisp <- simulated.response ~ f(id,
+    model = "generic0", Cmatrix = simulated.Cmatrix,
+    constr = FALSE,
+    hyper = list(prec = list(
+      initial = log(1 / 10), prior = "pc.prec",
+      param = c(1, 0.05)
+    ))
+  ) +
+    f(ind,
+      model = "iid", constr = TRUE
+    )
+  formula.standard <- simulated.response ~ f(id,
+    model = "generic0", Cmatrix = simulated.Cmatrix,
+    constr = FALSE,
+    hyper = list(prec = list(
+      initial = log(1 / 10), prior = "pc.prec",
+      param = c(1, 0.05)
+    ))
+  )
+
+
+  fit.overdisp <- inla(
+    formula = formula.overdisp, family = "binomial",
+    data = simulated.d.ped,
+    control.compute = list(return.marginals.predictor = TRUE)
+  )
+  fit.standard <- inla(
+    formula = formula.standard, family = "binomial",
+    data = simulated.d.ped,
+    control.compute = list(return.marginals.predictor = TRUE)
+  )
+  if (!is.null(fit.gaussian)) {
+    # Also compute Gaussian model
+    fit.gaussian <- inla(
+      formula = formula.standard, family = "gaussian",
+      data = simulated.d.ped
+    )
   }
 
-  
-  fit.probit <- inla(
-    formula = simulated.formula, family = "binomial",
-    data = simulated.d.ped, 
+
+  list(
+    fit.overdisp = fit.overdisp,
+    fit.standard = fit.standard,
+    fit.gaussian = fit.gaussian,
+    overdisp.p = p
   )
-  fit.probit
 }
 ```
 
 Here, we fit a probit with the formula $y_i = \beta_0 + a_i + \phi_i$, where the last is a random effect. The simulated data has overdisperion in its data via the residual vector being $\mathcal N(0,3)$.
 
 ```{r}
-sim.fit.probit <- alternative.probit.sim(0.5, function(u,.) u+rnorm(length(u), 0, sqrt(9)))
+overdisperion_wrapper <- function(nsamps, vA, vE, SAVE.PLOT) {
+  list2env( # Loads fit.overdisp, fit.standard, fit.gaussian, p
+    alternative.probit.sim(vA, function(u, .) u + rnorm(length(u), 0, sqrt(vE)),
+                           fit.gaussian = TRUE), .GlobalEnv
+  )
+  df.probit.comp <- data.frame(
+    Overdispersion = get.h2.from.qgparams(fit.overdisp, "binom1.probit",
+                                          nsamps, averaging = TRUE),
+    Standard = get.h2.from.qgparams(fit.standard, "binom1.probit",
+                                    nsamps, averaging = TRUE),
+    Gaussian = get.h2(fit.gaussian, nsamps)
+  )
+  true.h2.overdisp <- 1 / threshold.scaling.param(overdisp.p) * vA / (vA + vE)
 
-testdf = get.h2.from.qgparams(sim.fit.probit,"binom1.probit",10000)
+  curr.plot <- ggplot(data = melt(df.probit.comp)) +
+    geom_density(aes(x = value, fill = variable), alpha = 0.5) +
+    geom_vline(aes(xintercept = true.h2.overdisp, color = "true"),
+               lwd = 1, linetype = "dashed") +
+    scale_color_manual(name = "", labels = c(TeX("True $h^2_{obs}$")),
+                       values = c(true = "darkred")) +
+    scale_fill_discrete(name = "") +
+    xlab("Heritability") +
+    ylab("Density") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    scale_x_log10()
+  if (SAVE.PLOT) {
+    ggsave(paste0("../figures/overdispersion_vE-vA_", vE, "-", vA, ".pdf"),
+           curr.plot)
+  }
+}
 
-ggplot(data=data.frame(x=testdf)) + geom_density(aes(x=x))
-
-## Plot posterior QGglmm density? And show 'true' value threshold-scaled
-
-```` 
-
-## Overdispersion to simulation models
-
-```{r}
-# I think we have all functions we need to run this?
-# Remember to pass Ve in the function though
+overdisperion_wrapper(10000, 0.5, 2, TRUE)
+overdisperion_wrapper(10000, 0.5, 5, TRUE)
+overdisperion_wrapper(10000, 0.5, 10, TRUE)
+overdisperion_wrapper(10000, 10, 10, TRUE)
 ```
