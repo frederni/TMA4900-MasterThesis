@@ -111,7 +111,7 @@ Cmatrix <- nadiv::makeAinv(d.ped[, c("id", "mother.id", "father.id")])$Ainv
 
 qg.data.gg.inds$id <- d.map[match(qg.data.gg.inds$ninecode, d.map$ninecode),
                             "id"]
-qg.data.gg.inds$u <- seq_len(qg.data.gg.inds) # Extra IID effect
+qg.data.gg.inds$u <- seq_len(nrow(qg.data.gg.inds)) # Extra IID effect
 ```
 
 
@@ -817,7 +817,8 @@ h2.psi.sparrow$noavg <- get.h2.from.qgparams(fit.inla.probit,
 )
 cat("\n-\nRuntime for No averaging:",
     difftime(Sys.time(), ti, units = "secs"), "secs.\n")
-h2.psi.sparrow$phi <- heritability$probit.scaled
+h2.psi.sparrow$phi <- get.h2(fit.inla.probit, n.samples, model="binom1.probit",
+                             use.scale=TRUE)
 ```
 
 We do the same for simulation data
@@ -1199,7 +1200,7 @@ linear_predictor_fixedeffects <- function(u, simulated.d.ped) {
   varE <- 1
   betaSex <- 10
   out <- c()
-  intercept <- 0 #-8.5
+  intercept <- -4.5
   residuals <- rnorm(length(u), mean = 0, sd = sqrt(varE))
   for (idx in seq_along(u)) {
     out <- c(
