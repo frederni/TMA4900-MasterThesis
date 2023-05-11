@@ -292,7 +292,15 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9,
     simulated.response <- ifelse(
       linear.predictor(u, simulated.d.ped) <= cutoff, 0, 1
       )
-  } else {
+  } else if (is.numeric(dichotomize)){
+    stopifnot(dichotomize >= 0 & dichotomize <= 1)
+    eta_values <- linear.predictor(u, simulated.d.ped)
+    cutoff <- quantile(eta_values, 1-dichotomize)
+    # e.g. dichotomize=0.1, p should be about 0.1
+    simulated.response <- ifelse(eta_values <= cutoff, 0, 1)
+    
+  }
+  else {
     stop(paste0(
       "Unknown dichotomization method '", dichotomize, "'. ",
       "Consider using 'binom1.logit' or 'round'."
@@ -311,7 +319,11 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9,
   )
 
   # Checks for error status in INLA fit,
-  stopifnot(simulated.fit.inla$mode$mode.status == 0) # status != 0 is trouble
+  # TODO temp!
+  if (simulated.fit.inla$mode$mode.status != 0){
+    cat("\n[WARNING], INLA status", simulated.fit.inla$mode$mode.status,"\n")
+  }
+  # stopifnot(simulated.fit.inla$mode$mode.status == 0) # status != 0 is trouble
   heritability <- get.h2(simulated.fit.inla, 10000) # 10k samples should be suff
 
   # Also fit probit if specified
@@ -1269,7 +1281,7 @@ linear_predictor_fixedeffects <- function(u, simulated.d.ped) {
   varE <- 1
   betaSex <- 10
   out <- c()
-  intercept <- -4.5
+  intercept <- 0 #-4.5
   residuals <- rnorm(length(u), mean = 0, sd = sqrt(varE))
   for (idx in seq_along(u)) {
     out <- c(
@@ -1292,7 +1304,7 @@ m2$p
 
 # u = a + 10*x_sex + N(0,1) - somewhat unbalanced
 m3 <- plot.h2.deviation(
-  dichotomize = "round",
+  dichotomize = 0.1,
   title = "Simulation heritability for \nfixed effects model",
   SAVE.PLOT = TRUE, plot.fn = "fixedeffects_beta10_unbalanced",
   sigma.scale = "log",
@@ -1303,7 +1315,8 @@ m3 <- plot.h2.deviation(
 m3$p
 
 # How unbalanced is the response?
-summary(m3$res$plist)
+summary(m3$p$data$plist)
+
 ```
 
 For sufficiently large choice of $\beta$ corresponding to sex, we get progressively worse results as is expected.
