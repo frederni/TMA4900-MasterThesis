@@ -291,6 +291,11 @@ simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9,
     simulated.response <- ifelse(
       linear.predictor(u, simulated.d.ped) <= cutoff, 0, 1
       )
+  } else if (is.numeric(dichotomize)) {
+    cutoff <- quantile(linear.predictor(u, simulated.d.ped), 1-dichotomize)
+    simulated.response <- ifelse(
+      linear.predictor(u, simulated.d.ped) <= cutoff, 0, 1
+    )
   } else {
     stop(paste0(
       "Unknown dichotomization method '", dichotomize, "'. ",
@@ -1314,7 +1319,7 @@ For sufficiently large choice of $\beta$ corresponding to sex, we get progressiv
 Another thing we can check out, is how the grid plots of heritability scales would look like if we use a Gaussian and probit model with (somewhat dominating) fixed effect. We do that here:
 
 ```{r}
-sA <- 500
+sA <- 50
 fits <- simulated.heritability(
   idgen = 300,
   sigmaA = sA, linear.predictor = linear_predictor_fixedeffects,
