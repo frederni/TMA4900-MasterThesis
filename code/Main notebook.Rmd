@@ -12,8 +12,7 @@ knitr::opts_chunk$set(
   eval = TRUE, # Change to F before knit
   tidy = TRUE, message = FALSE,
   warning = FALSE, strip.white = TRUE, prompt = FALSE,
-  cache = TRUE, size = "scriptsize", fig.align = "center",
-  number_sections = FALSE
+  cache = TRUE, size = "scriptsize", fig.align = "center"
 )
 ```
 
@@ -53,7 +52,7 @@ library(reshape2)
 font_import(pattern = "cmunrm.ttf", prompt = FALSE) # LaTeX font
 loadfonts(device = "win")
 texfont <- "CMU Serif" # Laptop...
-theme_set(theme(text = element_text(family = texfont, size = 14)))
+theme_set(theme_bw() + theme(text = element_text(family = texfont, size = 20)))
 
 # Dataset import
 qg.data.gg.inds <- read.table("../data/qg.data.gg.inds.steffi.txt",
@@ -488,23 +487,21 @@ plot.h2.deviation <- function(
   # Plotting
   p <- ggplot(data = res, aes(x = sigmaA)) +
     geom_ribbon(aes(ymin = est.CI.l, ymax = est.CI.u), alpha = 0.1) +
-    geom_line(aes(y = true.vals, color = "True")) +
-    geom_line(aes(y = estimates, color = "Fitted (Threshold scaled)")) +
-    geom_line(aes(y = latent, color = "Fitted (observation scale)")) +
+    geom_line(aes(y = true.vals, color = "true"),size=1.5) +
+    geom_line(aes(y = estimates, color = "liab"),size=1.5) +
+    geom_line(aes(y = latent, color = "obs"),size=1.5) +
     xlab(TeX("$\\sigma_A^2$")) +
     ylab(TeX("$h^2$")) +
     scale_x_log10() +
     scale_color_manual(
       name = title,
-      breaks = c(
-        "True", "Fitted (Threshold scaled)",
-        "Fitted (observation scale)"
-      ),
-      values = c(
-        "True" = "darkred", "Fitted (Threshold scaled)" = "steelblue",
-        "Fitted (observation scale)" = "darkgreen"
-      )
-    )
+      values = c("true" = "darkred", "liab" = "steelblue",
+                 "obs" = "chartreuse3"),
+      labels = c(expression("True " * h["liab"]^2),
+                 expression("Fitted " * h["liab"]^2),
+                 expression("Fitted " * h["obs"]^2))
+    ) +
+    theme(text=element_text(size = 18), legend.text.align=0)
   if (SAVE.PLOT) {
     ggsave(paste0(
       "../figures/simulation_deviance_",
@@ -610,7 +607,7 @@ pit.g <- fit.inla.gaussian$cpo$pit # PIT-values
 # <Plot 1> Analogous to QQ-plot so should be linear
 # --------
 ggplot(data = data.frame(
-  Quantiles = seq_along(length(pit.g)) / (length(pit.g) + 1), PIT = sort(pit.g)
+  Quantiles = seq_along(1:length(pit.g)) / (length(pit.g) + 1), PIT = sort(pit.g)
 )) +
   geom_point(aes(x = Quantiles, y = PIT)) +
   ggtitle("Sorted PIT values for Gaussian model")
@@ -817,8 +814,6 @@ h2.psi.sparrow$noavg <- get.h2.from.qgparams(fit.inla.probit,
 )
 cat("\n-\nRuntime for No averaging:",
     difftime(Sys.time(), ti, units = "secs"), "secs.\n")
-h2.psi.sparrow$phi <- get.h2(fit.inla.probit, n.samples, model="binom1.probit",
-                             use.scale=TRUE)
 ```
 
 We do the same for simulation data
@@ -859,12 +854,10 @@ h2.psi.sim1$noavg <- get.h2.from.qgparams(fit.sim.probit,
 )
 cat("\n-\nRuntime for No averaging:",
     difftime(Sys.time(), ti, units = "secs"), ".\n")
-h2.psi.sim1$phi <- get.h2(fit.sim.probit, n.samples,
-                          use.scale = TRUE, model = "binom1.probit")
 
-# Also fit for smaller V_A, i.e. 0.5
+# Also fit for smaller V_A, i.e. 0.1
 tmp <- simulated.heritability(
-  sigmaA = 0.5, linear.predictor = function(u, .) u + rnorm(length(u)),
+  sigmaA = 0.1, linear.predictor = function(u, .) u + rnorm(length(u)),
   simulated.formula = simulated.formula,
   probit.model = TRUE
 )
@@ -890,8 +883,6 @@ h2.psi.sim2$noavg <- get.h2.from.qgparams(fit.sim.probit,
   n.samples,
   averaging = FALSE
 )
-h2.psi.sim2$phi <- get.h2(fit.sim.probit, n.samples, use.scale = TRUE,
-                          model = "binom1.probit")
 ```
 
 Let's see how it looks like.
@@ -908,34 +899,41 @@ plot.qgglmm.heritability <- function(h2.psi, dataset, SAVE.PLOT,
       labels = c(
         expression(h[Psi]^2 * ", Bayesian"),
         expression(h[Psi]^2 * ", Frequentist"),
-        expression(h[Psi]^2 * ", No averaging"),
-        expression(h[Phi]^2)
+        expression(h[Psi]^2 * ", No averaging")
       )
     ) +
     ylab("Density") +
     xlab("Heritability") +
     theme(legend.text.align = 0, legend.title = element_blank()) +
-    if (!is.na(plot.title)) ggtitle(plot.title)
+    {if (!is.na(plot.title)) ggtitle(plot.title)} +
+    {if (dataset=="simulation") xlim(c(0,quantile(melt(h2.psi)$value,0.99)))}
 
   if (SAVE.PLOT) {
+    p.legend <- cowplot::get_legend(p)
+    pdf(paste0("../figures/qgglmm-comparison-",dataset,"-legend.pdf"),
+        width=3,height=3)
+    grid.newpage()
+    grid.draw(p.legend)
+    dev.off()
     ggsave(paste0("../figures/qgglmm-comparison-",
-                  dataset, fn.append, ".pdf"), p)
+                  dataset, fn.append, ".pdf"), p + if(dataset=="simulation") theme(legend.position="none"),
+           width = 20, height = 10, units = "cm")
   }
   p
 }
 
 plot.qgglmm.heritability(h2.psi.sparrow, "application",
   SAVE.PLOT,
-  plot.title = "Application"
+  plot.title = NA #"Application"
 )
 plot.qgglmm.heritability(h2.psi.sim1, "simulation",
   SAVE.PLOT,
-  plot.title = TeX("Simulation, $\\sigma^2_A=1$"),
+  plot.title = NA, #TeX("Simulation, $\\sigma^2_A=1$"),
   fn.append = "va1"
 )
 plot.qgglmm.heritability(h2.psi.sim2, "simulation",
   SAVE.PLOT,
-  plot.title = TeX("Simulation, $\\sigma^2_A=0.5$"),
+  plot.title = NA, #TeX("Simulation, $\\sigma^2_A=0.5$"),
   fn.append = "va0.1"
 )
 ```
@@ -989,56 +987,54 @@ get.mode <- function(vec) {
   d$x[which.max(d$y)]
 }
 
-
-print.one.metric <- function(fit, param, digits) {
+print.one.metric <- function(fit, param, digits){
   paste(
-    round(mean(get(param, fit)), digits), " (",
-    round(get.mode(get(param, fit)), digits), ")\\newline $\\pm$ ",
-    round(sd(get(param, fit)), digits),
-    sep = ""
+    round(mean(get(param, fit)), digits), " & ",
+    round(get.mode(get(param, fit)), digits), " & ",
+    round(sd(get(param,fit)), digits), sep = ""
   )
 }
 
-print.heritability.table <- function(digits, h2appl, h2sim) {
+print.heritability.table <- function(digits, h2, simulation=T) {
   #' `digits` is the number of significant digits
   #' Prints tabularx-table of heritability with posterior mean, posterior mode
   #' and standard deviation. Does it for logit, probit and Gaussian.
   header <- paste(
     "% TABLE FROM R:", format(Sys.time(), "%a %b %d %X %Y"), "\n",
     "\\begin{table}[ht]\\centering\n",
-    "\\begin{tabularx}{\\textwidth}{lXX}\n",
+    "\\begin{tabular}{lccc}\n",
     "\\hline\n",
-    " & Application & Simulation $V_A=0.5$  \\\\ \n",
+    "Model & Mean & Mode & Standard deviation  \\\\ \n",
     "\\hline \n"
   )
   main <- paste(
-    "Gaussian $h^2_{obs}$ &", print.one.metric(h2appl, "gaussian", digits),
-    "&", print.one.metric(h2sim, "gaussian", digits),
-    "\\\\ \n",
-    "Gaussian $h^2_{liab}$ &", print.one.metric(h2appl, "gaussian.liability",
-                                                digits),
-    "&", print.one.metric(h2sim, "gaussian.liability", digits),
-    "\\\\ \n",
-    "Probit $h^2_{lat}$ &", print.one.metric(h2appl, "probit.latent", digits),
-    "&", print.one.metric(h2sim, "probit.latent", digits),
-    "\\\\ \n",
-    "Probit $h^2_{\\Phi}$ &", print.one.metric(h2appl, "probit.scaled", digits),
-    "&", print.one.metric(h2sim, "probit.scaled", digits),
-    "\\\\ \n",
-    "Probit $h^2_{\\Psi}$ &", print.one.metric(h2appl, "probit.qgglmm", digits),
-    "&", print.one.metric(h2sim, "probit.qgglmm", digits),
-    "\n"
+    " Gaussian $h^2_\\text{obs}$ &",
+    print.one.metric(h2, "gaussian", digits), "\\\\ \n",
+    
+    "Gaussian $h^2_\\text{liab}$ &",
+    print.one.metric(h2, "gaussian.liability", digits), "\\\\ \n",
+    
+    "Probit $h^2_\\text{lat}$ &",
+    print.one.metric(h2, "probit.latent", digits), "\\\\ \n",
+    
+    "Probit $h^2_{\\Phi}$ &",
+    print.one.metric(h2, "probit.scaled", digits), "\\\\ \n",
+    
+    "Probit $h^2_{\\Psi}$ &",
+    print.one.metric(h2, "probit.qgglmm", digits), "\n"
   )
-  footer <- paste("\\end{tabularx}",
+  footer <- paste("\\end{tabular}",
     "\\caption{<Insert caption>}",
-    "\\label{tab:heritabily results}",
+    ifelse(simulation, "\\label{tab:heritabily simulation}",
+           "\\label{tab:heritabily application}"),
     "\\end{table}",
     sep = "\n"
   )
 
   cat(header, main, footer, sep = "\n")
 }
-print.heritability.table(4, heritability, heritability.sim)
+print.heritability.table(4, heritability, FALSE)
+print.heritability.table(4, heritability.sim, TRUE)
 ```
 
 The table gives some indication, but we also want to look qualitatively on the densities. We start by just plotting a grid to compare each Gaussian vs. Probit scale two by two.
@@ -1123,20 +1119,24 @@ The ones we really care about, is plot $(1,2)$ (p3) and $(2,3)$ (p6), so let's e
 ```{r key plots heritability scales}
 plot.h2.appl$p3 +
   theme(legend.position = "right", legend.title = element_blank()) +
-  scale_fill_brewer(palette = "Dark2", labels = c("Gaussian", "Probit"))
+  scale_fill_brewer(palette = "Dark2", labels = c(TeX("Gaussian $h^2_{obs}$"), TeX("Probit $h^2_\\Psi$"))) +
+  theme(legend.text.align = 0, legend.position="bottom", legend.text = element_text(size=23)) + ggtitle("")
 if (SAVE.PLOT) ggsave("../figures/heritability_application_obsscale.pdf")
 plot.h2.appl$p6 +
   theme(legend.position = "right", legend.title = element_blank()) +
-  scale_fill_brewer(palette = "Dark2", labels = c("Gaussian", "Probit"))
+  scale_fill_brewer(palette = "Dark2", labels = c(TeX("Gaussian $h^2_{liab}$"), TeX("Probit $h^2_\\Phi$"))) +
+  theme(legend.text.align = 0, legend.position="bottom", legend.text = element_text(size=23)) + ggtitle("")
 if (SAVE.PLOT) ggsave("../figures/heritability_application_liabscale.pdf")
 
 plot.h2.sim$p3 +
   theme(legend.position = "right", legend.title = element_blank()) +
-  scale_fill_brewer(palette = "Spectral", labels = c("Gaussian", "Probit"))
+  scale_fill_brewer(palette = "Spectral", labels = c(TeX("Gaussian $h^2_{obs}$"), TeX("Probit $h^2_\\Psi$"))) +
+  theme(legend.text.align = 0, legend.position="bottom", legend.text = element_text(size=23)) + ggtitle("")
 if (SAVE.PLOT) ggsave("../figures/heritability_simulation_obsscale.pdf")
 plot.h2.sim$p6 +
   theme(legend.position = "right", legend.title = element_blank()) +
-  scale_fill_brewer(palette = "Spectral", labels = c("Gaussian", "Probit"))
+  scale_fill_brewer(palette = "Spectral", labels = c(TeX("Gaussian $h^2_{liab}$"), TeX("Probit $h^2_\\Phi$"))) +
+  theme(legend.text.align = 0, legend.position="bottom", legend.text = element_text(size=23)) + ggtitle("")
 if (SAVE.PLOT) ggsave("../figures/heritability_simulation_liabscale.pdf")
 ```
 
@@ -1188,7 +1188,7 @@ simulated.formula.fixedeffects <- simulated.response ~ sex +
 # u = a + 100*x_sex + N(0,1) - balanced binary trait
 m <- plot.h2.deviation(
   dichotomize = "round_balanced", title = TeX("$\\beta_{sex}=100$"),
-  SAVE.PLOT = TRUE, plot.fn = "fixedeffects_beta100", sigma.scale = "log",
+  SAVE.PLOT = SAVE.PLOT, plot.fn = "fixedeffects_beta100", sigma.scale = "log",
   lin.pred = linear_predictor_fixedeffects,
   simulated.formula = simulated.formula.fixedeffects,
   Ve = 100^2, fixedeffects = TRUE
@@ -1214,7 +1214,7 @@ linear_predictor_fixedeffects <- function(u, simulated.d.ped) {
 # u = a + 10*x_sex + N(0,1) - balanced binary trait
 m2 <- plot.h2.deviation(
   dichotomize = "round_balanced", title = TeX("$\\beta_{sex}=10$"),
-  SAVE.PLOT = TRUE, plot.fn = "fixedeffects_beta10", sigma.scale = "log",
+  SAVE.PLOT = SAVE.PLOT, plot.fn = "fixedeffects_beta10", sigma.scale = "log",
   lin.pred = linear_predictor_fixedeffects,
   simulated.formula = simulated.formula.fixedeffects,
   Ve = 10^2, fixedeffects = TRUE
@@ -1223,9 +1223,9 @@ m2$p
 # u = a + 100*x_sex + N(0,1) - unbalanced (p~8% depending on simulation)
 
 m3 <- plot.h2.deviation(
-  dichotomize = "round",
+  dichotomize = 0.1,
   title = "Simulation heritability for \nfixed effects model",
-  SAVE.PLOT = TRUE, plot.fn = "fixedeffects_beta10_unbalanced",
+  SAVE.PLOT = SAVE.PLOT, plot.fn = "fixedeffects_beta10_unbalanced",
   sigma.scale = "log",
   lin.pred = linear_predictor_fixedeffects,
   simulated.formula = simulated.formula.fixedeffects,
