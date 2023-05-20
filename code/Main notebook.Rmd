@@ -513,15 +513,15 @@ plot.h2.deviation <- function(
   # Plotting
   p <- ggplot(data = res, aes(x = sigmaA)) +
     geom_ribbon(aes(ymin = est.CI.l, ymax = est.CI.u), alpha = 0.1) +
-    geom_line(aes(y = true.vals, color = "true"),size=1.5) +
-    geom_line(aes(y = estimates, color = "liab"),size=1.5) +
+    geom_line(aes(y = true.vals, color = "atrue"),size=1.5) +
+    geom_line(aes(y = estimates, color = "bliab"),size=1.5) +
     geom_line(aes(y = latent, color = "obs"),size=1.5) +
     xlab(TeX("$\\sigma_A^2$")) +
     ylab(TeX("$h^2$")) +
     scale_x_log10() +
     scale_color_manual(
       name = title,
-      values = c("true" = "darkred", "liab" = "steelblue",
+      values = c("atrue" = "darkred", "bliab" = "steelblue",
                  "obs" = "chartreuse3"),
       labels = c(expression("True " * h["liab"]^2),
                  expression("Fitted " * h["liab"]^2),
@@ -643,7 +643,7 @@ ggplot(data = data.frame(
   Quantiles = seq_along(1:length(pit.g)) / (length(pit.g) + 1), PIT = sort(pit.g)
 )) +
   geom_point(aes(x = Quantiles, y = PIT)) +
-  ggtitle("Sorted PIT values for Gaussian model")
+  ggtitle("Sorted PIT values for Gaussian model") + theme(title = element_text(size=16))
 if (SAVE.PLOT) ggsave("../figures/PIT-sorted.pdf")
 
 # <Plot 2> Posterior mean fitted values as a function of PIT values
@@ -659,7 +659,7 @@ ggplot(
     title = "PIT values over posterior mean fitted values",
     x = "Posterior fitted values (mean)",
     y = "PIT value"
-  )
+  ) + theme(title = element_text(size=16))
 if (SAVE.PLOT) ggsave("../figures/PIT-over-fitted.pdf")
 
 
@@ -1327,29 +1327,38 @@ For sufficiently large choice of $\beta$ corresponding to sex, we get progressiv
 Another thing we can check out, is how the grid plots of heritability scales would look like if we use a Gaussian and probit model with (somewhat dominating) fixed effect. We do that here:
 
 ```{r}
-sA <- 50
-fits <- simulated.heritability(
-  idgen = 300,
-  sigmaA = sA, linear.predictor = linear_predictor_fixedeffects,
-  simulated.formula = simulated.formula.fixedeffects, probit.model = TRUE
-)
-h2.sim.fixed <- get.all.heritabilities(fits$fit, fits$fit.probit, fits$p,
-                                       n.samples, fixed = TRUE)
-h2.true <- sA / (sA + 1 + 10^2 * var(fits$simulated.response)) *
-  1 / threshold.scaling.param(fits$p)
-ggplot(melt(h2.sim.fixed[, c("gaussian", "probit.qgglmm")])) +
-  geom_density(aes(x = value, fill = variable), alpha = 0.5) +
-  geom_vline(aes(xintercept = h2.true, color = "true"), lwd = 1,
-             linetype = "dashed") +
-  scale_color_manual(name = "", labels = TeX("True $h^2_{obs}$"),
-                     values = c(true = "darkred")) +
-  scale_fill_discrete(
-    name = "Model",
-    labels = c(TeX("Gaussian $h^2_{obs}"), TeX("Probit $h^2_\\Psi$"))) +
-  theme(legend.text.align = 0) +
-  xlab("Heritability") +
-  ylab("Density")
-if (SAVE.PLOT) ggsave("../figures/fixedeffects_gaussian_and_probit.pdf")
+plot.fixedeffects.h2 <- function(sA, .dichotomize, include.fixed=T, sE=1, beta=10, SAVE.PLOT=T){
+  .pc.prior <- c(10^(ceiling(log10(sA))), 0.05)
+  fits <- simulated.heritability(
+    idgen = 100, dichotomize = .dichotomize, pc.prior = .pc.prior,
+    sigmaA = sA, linear.predictor = linear_predictor_fixedeffects,
+    simulated.formula = simulated.formula.fixedeffects, probit.model = TRUE
+  )
+  h2.sim.fixed <- get.all.heritabilities(fits$fit, fits$fit.probit, fits$p,
+                                         n.samples, fixed = FALSE)
+  h2.true.fixed <- sA / (sA + sE + beta^2*var(fits$simulated.response)) *
+    1 / threshold.scaling.param(fits$p)
+  
+  ggplot(melt(h2.sim.fixed[, c("gaussian", "probit.qgglmm")])) +
+    geom_density(aes(x = value, fill = variable), alpha = 0.5) +
+    geom_vline(aes(xintercept = h2.true.fixed, color = "true"), lwd = 1,
+               linetype = "dashed") +
+    scale_color_manual(name = "", labels = TeX("True $h^2_{obs}$"),
+                       values = c(true = "darkred")) +
+    scale_fill_discrete(
+      name = "Model",
+      labels = c(TeX("Gaussian $h^2_{obs}"), TeX("Probit $h^2_\\Psi$"))) +
+    theme(legend.text.align = 0) +
+    xlab("Heritability") +
+    ylab("Density")
+  if(SAVE.PLOT) ggsave(
+    paste0("../figures/fixedeffects_gaussian_probit_sA",sA, ".pdf"),
+    width=20, height=10, units="cm")
+}
+plot.fixedeffects.h2(10, 0.1)
+plot.fixedeffects.h2(500,0.1)
+# ---
+
 ```
 
 
@@ -1473,19 +1482,27 @@ overdisperion_wrapper <- function(nsamps, vA, vE, SAVE.PLOT) {
                lwd = 1, linetype = "dashed") +
     scale_color_manual(name = "", labels = c(TeX("True $h^2_{obs}$")),
                        values = c(true = "darkred")) +
-    scale_fill_discrete(name = "") +
+    scale_fill_discrete(name = "", labels= c(
+      TeX("$h^2_\\Psi$ with overdispersion"),
+      TeX("$h^2_\\Psi$ without overdispersion"),
+      TeX("$h^2_{obs}$"))) +
     xlab("Heritability") +
     ylab("Density") +
-    theme(plot.title = element_text(hjust = 0.5)) +
-    scale_x_log10()
+    theme(legend.position = "bottom") +
+    xlim(c(0,quantile(melt(df.probit.comp)$value, 0.95)))
   if (SAVE.PLOT) {
+    p.legend <- cowplot::get_legend(curr.plot)
+    pdf("../figures/overdisperions_legend.pdf",width=9,height=1)
+    grid.newpage()
+    grid.draw(p.legend)
+    dev.off()
     ggsave(paste0("../figures/overdispersion_vE-vA_", vE, "-", vA, ".pdf"),
-           curr.plot)
+           curr.plot + theme(legend.position = "none"))
   }
 }
 
-overdisperion_wrapper(10000, 0.5, 2, TRUE)
-overdisperion_wrapper(10000, 0.5, 5, TRUE)
-overdisperion_wrapper(10000, 0.5, 10, TRUE)
-overdisperion_wrapper(10000, 10, 10, TRUE)
+overdisperion_wrapper(10000, 0.5, 2, SAVE.PLOT)
+overdisperion_wrapper(10000, 0.5, 5, SAVE.PLOT)
+overdisperion_wrapper(10000, 0.5, 10, SAVE.PLOT)
+overdisperion_wrapper(10000, 10, 10, SAVE.PLOT)
 ```
