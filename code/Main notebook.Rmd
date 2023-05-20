@@ -595,14 +595,13 @@ plot.A.matrix <- function(pedigree, title.append = NULL) {
   #' @return ggplot object of histogram
   A.matrix <- nadiv::makeA(pedigree)
   A.diag <- diag(A.matrix)
-  plot(A.diag)
   A.nondiag <- A.matrix
   diag(A.nondiag) <- NA
   ggplot(data = data.frame(values = A.nondiag@x)) +
     geom_histogram(aes(x = values, y = ..density..), binwidth = 0.01) +
     labs(
       x = "Relatedness value", y = "Density",
-      title = paste0("Off-diagonal values", title.append)
+      title = paste0("Off–diagonal values", title.append)
     )
 }
 
@@ -635,6 +634,7 @@ For the Gaussian INLA model we also compute PIT (probability integral transform)
 * The third plot is the residuals $y_i - \hat{y_i}$ with 95% credible interval. Here, we see a clear separation of those
 
 ```{r gaussian plotting}
+
 pit.g <- fit.inla.gaussian$cpo$pit # PIT-values
 
 # <Plot 1> Analogous to QQ-plot so should be linear
@@ -680,6 +680,8 @@ ggplot(data = df.resid,
                      values = c("darkred", "steelblue")) +
   labs(title = "Residuals of Gaussian model", x = "Index", y = "Residuals")
 if (SAVE.PLOT) ggsave("../figures/Residuals-gaussian.pdf")
+
+
 ```
 
 # Transformations of heritability
