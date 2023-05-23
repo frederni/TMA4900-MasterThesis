@@ -419,7 +419,7 @@ plot.h2.deviation <- function(
   #' @param title ggplot legend title used as title for all (sub)plots
   #' @param SAVE.PLOT flag for saving plot to disk
   #' @param plot.fn (optional) String to add to fileame when saving plot
-  #' @param sigma.sclae either "log" or "small", deciding what values, and the
+  #' @param sigma.scale either "log" or "small", deciding what values, and the
   #' spacing between values of V_A to be iterated over.
   #' @param lin.pred linear predictor for simulation
   #' @param dynamic.priors Flag for changing model priors based on value of V_A
@@ -1507,4 +1507,76 @@ overdisperion_wrapper(10000, 0.5, 2, SAVE.PLOT)
 overdisperion_wrapper(10000, 0.5, 5, SAVE.PLOT)
 overdisperion_wrapper(10000, 0.5, 10, SAVE.PLOT)
 overdisperion_wrapper(10000, 10, 10, SAVE.PLOT)
+```
+
+# Illustrative figures
+
+Addendum - Illustrative figure for fitted values in a probit model. This is intended to demonstrate the different scales you get when using GLMMs.
+
+```{r}
+mod <- simulated.heritability(linear.predictor = linear.predictor,
+                              simulated.formula = simulated.formula,
+                              probit.model=T)
+pmod <- mod$fit.probit
+eta_samples <- marginal.latent.samples(pmod,20)
+
+# Plotting
+sample_ids = sort(c(LETTERS, letters))[1:40]
+
+eta_df <- data.frame(
+  elem = c(rep(sample_ids[1:20], each=900), # Latent eta
+           rep(sample_ids[21:40], each=900), # Phi(eta)
+           rep("z",900)), # True observations
+  value=c(unlist(eta_samples),
+          pnorm(unlist(eta_samples)),
+          mod$simulated.response)
+  )
+custom_palette <- c(
+  colorRampPalette(c("pink", "darkred"))(20),
+  colorRampPalette(c("lightblue", "darkblue"))(20), "darkgreen")
+
+ggplot(eta_df) +
+  geom_line(aes(x=value, color=elem), stat="density", alpha=0.25, size=2) +
+  scale_color_manual(values=custom_palette) + theme(legend.position = "none") +
+  xlab("(Predicted) response") + ylab("Density") +
+  # Plot true observations once more to get more visible green color
+  geom_line(data=eta_df[eta_df$elem=="z", ], aes(x=value, color=elem),
+            stat="density", alpha=0.5, size=2)
+if(SAVE.PLOT){
+  ggsave("../figures/illustration_probit_scales_fitted_values.pdf",
+         width=20, height=10, units="cm")
+  # Generate legend
+  plegend <- cowplot::get_legend(
+    ggplot(melt(data.frame(r=rnorm(1), b=rnorm(1),t=rnorm(1)))) +
+      geom_line(aes(x=value, color=variable), stat="density",size=2, alpha=0.9) +
+      scale_color_manual(
+        name="",
+        labels=c(TeX("$\\eta$"), TeX("$\\Phi(\\eta)$"), "True observations"),
+        values=c(r="darkred", b="darkblue", t="darkgreen")
+        ) +
+      theme(legend.text.align = 0, legend.position = "bottom"))
+  pdf("../figures/illustration_probit_scales_fitted_values_legend.pdf",
+      width=4.2, height=1)
+  grid.newpage()
+  grid.draw(plegend)
+  dev.off()
+  }
+
+```
+The second is an illustrative figure for binomial vs linear regression in general.
+```{r}
+data(mtcars)
+library(ggplot2)
+library(cowplot)
+p1 <- ggplot(mtcars, aes(x=hp, y=vs)) + 
+  geom_point(alpha=.5) + ggtitle("Binomial regression") +
+  stat_smooth(method="glm", se=F, method.args = list(family=binomial)) +
+  ylim(c(-0.2,1.01))
+p2 <- ggplot(mtcars, aes(x=hp, y=vs)) + 
+  geom_point(alpha=.5) +
+  stat_smooth(method="lm", se=F) + ggtitle("Linear regression") +
+  ylim(c(-0.2,1.01))
+
+plot_grid(p1, p2, ncol = 2, align = "v", axis = "tb")
+ggsave("../figures/linear-vs-logistic-example.pdf")
 ```
