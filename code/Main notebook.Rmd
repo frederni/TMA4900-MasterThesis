@@ -48,11 +48,12 @@ library("MCMCglmm")
 # Plotting libraries and settings
 library(cowplot)
 library(grid)
-library(extrafont)
 library(reshape2)
-font_import(pattern = "cmunrm.ttf", prompt = FALSE) # LaTeX font
-loadfonts(device = "win")
-texfont <- "CMU Serif" # Laptop...
+library(showtext)
+texfont <- "CMU Serif"
+showtext_auto()
+showtext_opts(dpi = 300) # Required to get readable PNGs
+font_add(texfont, "C:/Users/frede/AppData/Local/Microsoft/Windows/Fonts/cmunrm.ttf")
 theme_set(theme_bw() + theme(text = element_text(family = texfont, size = 20)))
 
 # Dataset import
@@ -598,10 +599,10 @@ plot.A.matrix <- function(pedigree, title.append = NULL) {
   A.nondiag <- A.matrix
   diag(A.nondiag) <- NA
   ggplot(data = data.frame(values = A.nondiag@x)) +
-    geom_histogram(aes(x = values, y = ..density..), binwidth = 0.01) +
-    labs(
+    geom_histogram(aes(x = values, y = ..density..), binwidth = 0.005) + ylim(c(0,9)) + xlim(c(0,0.4)) +
+    labs( # –
       x = "Relatedness value", y = "Density",
-      title = paste0("Off–diagonal values", title.append)
+      title = paste0("Off-diagonal values", title.append)
     )
 }
 
@@ -1571,12 +1572,13 @@ library(cowplot)
 p1 <- ggplot(mtcars, aes(x=hp, y=vs)) + 
   geom_point(alpha=.5) + ggtitle("Binomial regression") +
   stat_smooth(method="glm", se=F, method.args = list(family=binomial)) +
-  ylim(c(-0.2,1.01))
+  ylim(c(-0.2,1.01)) 
 p2 <- ggplot(mtcars, aes(x=hp, y=vs)) + 
   geom_point(alpha=.5) +
   stat_smooth(method="lm", se=F) + ggtitle("Linear regression") +
   ylim(c(-0.2,1.01))
 
 plot_grid(p1, p2, ncol = 2, align = "v", axis = "tb")
-ggsave("../figures/linear-vs-logistic-example.pdf")
+ggsave("../figures/linear-vs-logistic-example.pdf",
+       width=20, height=10, units="cm")
 ```
