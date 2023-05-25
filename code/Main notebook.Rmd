@@ -3,7 +3,7 @@ title: "Main notebook"
 output:
   pdf_document:
     keep_tex: yes
-date: '2023-02-01'
+date: '2023-06-23'
 ---
 
 ```{r setup, include=FALSE}
@@ -52,8 +52,10 @@ library(reshape2)
 library(showtext)
 texfont <- "CMU Serif"
 showtext_auto()
-showtext_opts(dpi = 300) # Required to get readable PNGs
-font_add(texfont, "C:/Users/frede/AppData/Local/Microsoft/Windows/Fonts/cmunrm.ttf")
+# showtext_opts(dpi = 300) # Required to get readable PNGs
+font.paths(file.path(Sys.getenv("LOCALAPPDATA"), "Microsoft",
+                                    "Windows", "Fonts"))
+font_add(texfont, regular="cmunrm.ttf")
 theme_set(theme_bw() + theme(text = element_text(family = texfont, size = 20)))
 
 # Dataset import
@@ -199,7 +201,7 @@ get.h2 <- function(inla.fit, n, use.scale = FALSE, model = NA,
     denominator <- denominator + 1 / samples[, cname]
   }
   if (include.fixed) {
-    # Curerently it just takes the SD instead of sampling,
+    # Currently it just takes the SD instead of sampling,
     # didn't find an easy way to sample fixed effect estimates..
     denominator <- denominator + sum(inla.fit$summary.fixed[, "sd"]^2)
   }
@@ -965,6 +967,7 @@ plot.qgglmm.heritability <- function(h2.psi, dataset, SAVE.PLOT,
     {if (dataset=="simulation") xlim(c(0,quantile(melt(h2.psi)$value,0.99)))}
 
   if (SAVE.PLOT) {
+    set_null_device(cairo_pdf)
     p.legend <- cowplot::get_legend(p)
     pdf(paste0("../figures/qgglmm-comparison-",dataset,"-legend.pdf"),
         width=3,height=3)
@@ -1169,6 +1172,7 @@ plot_grid_of_heritability <- function(heritability, SAVE.PLOT, plot.fn,
     theme(legend.position = "none", axis.title = element_blank()) +
     labs(title = TeX("$h^2_{liab}$ vs. $h^2_{\\Phi}$")) +
     if (!is.na(colorscheme)) scale_fill_brewer(palette = colorscheme)
+  set_null_device(cairo_pdf)
   p <- plot_grid(p1, p3, p5, p2, p4, p6, ggplot() +
     theme_void(),
   get_legend(
