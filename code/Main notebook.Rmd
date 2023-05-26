@@ -9,7 +9,7 @@ date: '2023-06-23'
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
   echo = TRUE,
-  eval = FALSE, # Change to F before knit
+  eval = TRUE, # Change to F before knit
   tidy = TRUE, message = FALSE,
   warning = FALSE, strip.white = TRUE, prompt = FALSE,
   cache = TRUE, size = "scriptsize", fig.align = "center"
@@ -1481,7 +1481,8 @@ Another thing we can check out, is how the grid plots of heritability scales wou
 
 ```{r}
 plot.fixedeffects.h2 <- function(sA, .dichotomize, include.fixed = T,
-                                 sE = 1, beta = 10, SAVE.PLOT = T) {
+                                 sE = 1, beta = 10, SAVE.PLOT = T,
+                                 plot.legend=F) {
   .pc.prior <- c(10^(ceiling(log10(sA))), 0.05)
   fits <- simulated.heritability(
     idgen = 100, dichotomize = .dichotomize, pc.prior = .pc.prior,
@@ -1497,7 +1498,7 @@ plot.fixedeffects.h2 <- function(sA, .dichotomize, include.fixed = T,
                          ) *
     1 / threshold.scaling.param(fits$p)
 
-  ggplot(melt(h2.sim.fixed[, c("gaussian", "probit.qgglmm")])) +
+  p <- ggplot(melt(h2.sim.fixed[, c("gaussian", "probit.qgglmm")])) +
     geom_density(aes(x = value, fill = variable), alpha = 0.5) +
     geom_vline(aes(xintercept = h2.true.fixed, color = "true"),
       lwd = 1,
@@ -1508,22 +1509,36 @@ plot.fixedeffects.h2 <- function(sA, .dichotomize, include.fixed = T,
       values = c(true = "darkred")
     ) +
     scale_fill_discrete(
-      name = "Model",
+      name = "",
       labels = c(TeX("Gaussian $h^2_{obs}"),TeX("Probit $h^2_\\Psi$"))
     ) +
     theme(legend.text.align = 0) +
     xlab("Heritability") +
-    ylab("Density")
+    ylab("Density") + theme(legend.position = "bottom")
   if (SAVE.PLOT) {
+    p.legend <- cowplot::get_legend(p)
+    pdf("../figures/fixedeffects_gaussian_probit_legend.pdf",
+        width = 5.5, height = 1)
+    grid.newpage()
+    grid.draw(p.legend)
+    dev.off()
+    legend.pos <- if(plot.legend) "right" else "none"
+    plot.height <- if(plot.legend) 10 else 20
+    fn_append <- if(plot.legend) "_wide" else NULL
     ggsave(
-      paste0("../figures/fixedeffects_gaussian_probit_sA", sA, ".pdf"),
-      width = 20, height = 10, units = "cm"
+      paste0("../figures/fixedeffects_gaussian_probit_sA", sA,
+      "_p_", 10*round(fits$p,1), fn_append, ".pdf"),
+      p+theme(legend.position = legend.pos), width = 20,
+      height = plot.height, units = "cm"
     )
   }
 }
+plot.fixedeffects.h2(10, 0.1,plot.legend=T)
 plot.fixedeffects.h2(10, 0.1)
+plot.fixedeffects.h2(10, "round_balanced")
 plot.fixedeffects.h2(500, 0.1)
-# ---
+plot.fixedeffects.h2(500,"round_balanced")
+
 ```
 
 
