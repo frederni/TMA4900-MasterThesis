@@ -589,6 +589,56 @@ plot.h2.deviation <- function(
 }
 ```
 
+We also implement a method to average over several runs, reducing stochasticity.
+
+```{r}
+multiple.h2.dev <- function(sigma.scale, ntimes, ...){
+  if (sigma.scale == "log") {
+    sigmaA.list <- c(1:10 %o% 10^(-3:3))
+  } else if (sigma.scale == "small") {
+    sigmaA.list <- seq(0.001, 0.26, by = 0.01)
+  } else {
+    stop("Unrecognized scale for sigmaA.")
+  }
+  n.sigma <- length(sigmaA.list)
+  # Initialize containers: each col is one run
+  all.h2obs <- matrix(ncol = ntimes, nrow = n.sigma)
+  all.h2liab <- matrix(ncol = ntimes, nrow = n.sigma)
+  all.truevals <- matrix(ncol = ntimes, nrow = n.sigma)
+  for(i in 1:ntimes){
+    cat(paste0("\n [Run ", i ,"/", ntimes, "]\n"))
+    # res <- list(data=data.frame(latent=rnorm(n.sigma),
+    #                             estimate=rnorm(n.sigma),
+    #                             true.vals=rnorm(n.sigma)))
+    res <- plot.h2.deviation(SAVE.PLOT = FALSE, ...)
+    all.h2obs[, i] <- res$p$data$latent
+    all.h2liab[, i] <- res$p$data$estimate
+    all.truevals[, i] <- res$p$data$true.vals
+  }
+  plot.data <- data.frame(
+    model = rep(c("h2obs", "h2liab", "true"),
+                each = n.sigma, times = 2),
+    top = c(rowMeans(all.h2obs) + apply(all.h2obs, 1, sd),
+            rowMeans(all.h2liab) + apply(all.h2liab, 1, sd),
+            rowMeans(all.truevals) + apply(all.truevals, 1, sd)
+            ),
+    mid = c(rowMeans(all.h2obs), rowMeans(all.h2liab),
+            rowMeans(all.truevals)
+            ),
+    btm = c(rowMeans(all.h2obs) - apply(all.h2obs, 1, sd),
+            rowMeans(all.h2liab) - apply(all.h2liab, 1, sd),
+            rowMeans(all.truevals) - apply(all.truevals, 1, sd)
+            ),
+    xax = rep(sigmaA.list, times=3)
+  )
+  ggplot(plot.data, aes(x=xax)) +
+    geom_pointrange(aes(ymax=top, ymin=btm, y=mid, color=model)) + scale_x_log10()
+}
+
+multiple.h2.dev("log",3)
+
+```
+
 Let's test it out for different values
 
 ```{r sim results over V_A}
