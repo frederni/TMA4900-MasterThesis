@@ -1263,11 +1263,10 @@ print.heritability.table <- function(digits, h2, simulation = T) {
   #' @param h2 Heritability DF with different scales
   #' @param simulation Simulation flag for the table's LaTeX label
   #' @return None (invisible `NULL`)
-  texlabel <- ifelse(simulation, "\\label{tab:heritability simulation}",
-      "\\label{tab:heritability application}")
+  filename <- ifelse(simulation, "heritability simulation",
+      "heritability application")
   header <- paste(
     "% TABLE FROM R:", format(Sys.time(), "%a %b %d %X %Y"), "\n",
-    # "\\begin{table}[ht]\\centering\n",
     "\\begin{tabular}{lccc}\n",
     "\\hline\n",
     "Model & Mean & Mode & Standard deviation  \\\\ \n",
@@ -1285,15 +1284,10 @@ print.heritability.table <- function(digits, h2, simulation = T) {
     "Probit $h^2_{\\Psi}$ &",
     print.one.metric(h2, "probit.qgglmm", digits), "\n"
   )
-  footer <- paste("\\end{tabular}",
-    # "\\caption{<Insert caption>}",
-    texlabel,
-    # "\\end{table}",
-    sep = "\n"
-  )
+  footer <- "\\end{tabular}"
 
   write(paste(header, main, footer, sep = "\n"),
-        file=paste0("../figures/", texlabel, ".tex"))
+        file=paste0("../figures/", filename, ".tex"))
 }
 print.heritability.table(3, heritability, FALSE)
 print.heritability.table(3, heritability.sim, TRUE)
@@ -1801,7 +1795,8 @@ Addendum - Illustrative figure for fitted values in a probit model. This is inte
 mod <- simulated.heritability(
   linear.predictor = function(u, .) u + rnorm(length(u)),
   simulated.formula = simulated.formula,
-  probit.model = T
+  probit.model = T,
+  simulated.formula.probit = simulated.formula.probit
 )
 pmod <- mod$fit.probit
 eta_samples <- marginal.latent.samples(pmod, 20)
