@@ -58,7 +58,8 @@ We have a very strong negative correlation here. We can also look at the individ
 
 ```{r}
 founder_population.id <- d.ped[is.na(d.ped$gendam), "ninecode"]
-table(d.Q[which(d.Q$ninecode %in% founder_population.id), c("foc0", "g1")])
+table(d.Q[which(d.Q$ninecode %in% founder_population.id),
+          c("foc0", "g1")])
 ```
 
 The values seem to be relatively balanced between $0$ and $1$ in the founder population. This supports the idea that they measure the immigration contribution to the genetic composition of the individuals. All immigrant individuals are completely immigrant, have no pedigree and are thus part of the founder population. The latter are those who are the "inital" natives on the island, meaning that their values must be exactly zero.
@@ -77,9 +78,12 @@ The response variable we will use is `surv.ind.to.ad`. Some immediate observatio
 
 ```{r}
 paste("Earliest year:", min(qg.data.gg.inds$natalyr))
-paste(c("Number not survived:", "Number survived:"), table(qg.data.gg.inds$surv.ind.to.ad))
-paste("natal year correlation:", cor(qg.data.gg.inds$natalyr, qg.data.gg.inds$natalyr.no))
-paste("correlation between sex and sex.x1:", cor(qg.data.gg.inds$sex.use, qg.data.gg.inds$sex.use.x1))
+paste(c("Number not survived:", "Number survived:"),
+      table(qg.data.gg.inds$surv.ind.to.ad))
+paste("natal year correlation:",
+      cor(qg.data.gg.inds$natalyr, qg.data.gg.inds$natalyr.no))
+paste("correlation between sex and sex.x1:",
+      cor(qg.data.gg.inds$sex.use, qg.data.gg.inds$sex.use.x1))
 ```
 
 An overview over the columns:
@@ -104,7 +108,8 @@ First, we look at sex:
 ```{r}
 library(ggplot2)
 
-ggplot(qg.data.gg.inds, aes(x = factor(surv.ind.to.ad), fill = factor(sex))) +
+ggplot(qg.data.gg.inds, aes(x = factor(surv.ind.to.ad),
+                            fill = factor(sex))) +
   ggtitle("Distribution of juvenile survival to adulthood") +
   geom_bar(alpha = 0.7) +
   xlab("Survival") +
@@ -118,7 +123,8 @@ ggplot(qg.data.gg.inds, aes(x = factor(surv.ind.to.ad), fill = factor(sex))) +
 Seems like the sex in relation to survival is relatively balanced here. We can note that it seems like a larger portion of those surviving are females. Next, we look at the breeding coefficient.
 
 ```{r}
-ggplot(qg.data.gg.inds, aes(x = f.coef, fill = factor(surv.ind.to.ad))) +
+ggplot(qg.data.gg.inds, aes(x = f.coef,
+                            fill = factor(surv.ind.to.ad))) +
   ggtitle("Distribution of inbreeding coefficient") +
   geom_density(alpha = 0.5) +
   xlab("Inbreeding coefficient") +
@@ -133,9 +139,9 @@ ggplot(qg.data.gg.inds, aes(x = f.coef, fill = factor(surv.ind.to.ad))) +
 Here we see that survival is a bit more skewed towards lower inbreeding coefficients. We can also look at how the proportion of individuals have survived over the years:
 
 ```{r}
-ggplot(aggregate(surv.ind.to.ad ~ natalyr, qg.data.gg.inds, function(x) {
-  sum(x) / length(x)
-}), aes(x = natalyr, y = surv.ind.to.ad)) +
+ggplot(aggregate(surv.ind.to.ad ~ natalyr, qg.data.gg.inds,
+                 function(x) {sum(x) / length(x)}),
+       aes(x = natalyr, y = surv.ind.to.ad)) +
   geom_line() +
   geom_point() +
   geom_smooth() +
@@ -164,9 +170,9 @@ ggplot(qg.data.gg.inds, aes(x = g1, fill = factor(surv.ind.to.ad))) +
 This shows a similar result to the inbreeding coefficient, namely a skew towards the right (lower values of coefficient) in the group that survived. We might also look into survival based on brood date:
 
 ```{r}
-ggplot(aggregate(surv.ind.to.ad ~ brood.date, qg.data.gg.inds, function(x) {
-  sum(x) / length(x)
-}), aes(x = brood.date, y = surv.ind.to.ad)) +
+ggplot(aggregate(surv.ind.to.ad ~ brood.date, qg.data.gg.inds,
+                 function(x) {sum(x) / length(x)}),
+  aes(x = brood.date, y = surv.ind.to.ad)) +
   geom_line() +
   geom_point() +
   geom_smooth() +
