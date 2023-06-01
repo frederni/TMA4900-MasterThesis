@@ -484,6 +484,7 @@ plot.h2.deviation <- function(
     stop("Unrecognized scale for sigmaA.")
   }
   pc.U.list <- c(rep(10, 10) %o% 10^(-3:3))
+  # pc.U.list <- 2*sigmaA.list # Alternative dynamic prior
 
   estimates <- c()
   latent <- c()
@@ -611,6 +612,16 @@ We also implement a method to average over several runs, reducing stochasticity.
 ```{r}
 multiple.h2.dev <- function(sigma.scale, ntimes,
                             title = "Simulation heritability", ...){
+  #' Run plot_h2_deviation `ntimes` and report mean
+  #' 
+  #' Repeats the runs several times, and outputs error plot,
+  #' (pointrange) with mean +- SD
+  #' @param sigma.scale either 'log' or 'small', like in other fnc.
+  #' @param ntimes Number of repeated runs
+  #' @param title Legend title, character
+  #' @param ... Additional parameters to plot_h2_deviation
+  #' @return ggplot object
+
   if (sigma.scale == "log") {
     sigmaA.list <- c(1:10 %o% 10^(-3:3))
   } else if (sigma.scale == "small") {
@@ -1257,11 +1268,11 @@ print.one.metric <- function(fit, param, digits) {
 print.heritability.table <- function(digits, h2, simulation = T) {
   #' Output LaTeX table of heritability
   #'
-  #' Prints table of heritability with posterior mean, posterior mode
-  #' and standard deviation. Works for both application and simulation
+  #' Writes table of heritability with posterior mean, posterior mode
+  #' and standard deviation, to a TeX file. Works for both datasets.
   #' @param digits Number of significant digits
   #' @param h2 Heritability DF with different scales
-  #' @param simulation Simulation flag for the table's LaTeX label
+  #' @param simulation Simulation flag for the table's filename
   #' @return None (invisible `NULL`)
   filename <- ifelse(simulation, "heritability simulation",
       "heritability application")
@@ -1469,7 +1480,7 @@ $$
 
 ```{r fixed effects simulation}
 linear_predictor_fixedeffects <- function(u, simulated.d.ped) {
-  #' \Tilde{eta} = a + N(0, varE) + betaSex x_{sex}
+  #' \Tilde{\eta} = a + N(0, varE) + betaSex x_{sex}
   varE <- 1
   betaSex <- 100
   out <- c()
@@ -1504,9 +1515,9 @@ m <- plot.h2.deviation(
   sigma.scale = "log",
   lin.pred = linear_predictor_fixedeffects,
   simulated.formula = simulated.formula.fixedeffects,
-  Ve = 100^2, fixedeffects = TRUE
+  Ve = 100^2, fixedeffects = TRUE, dynamic.priors=TRUE
 )
-m$p + xlim(c(1,10^4))
+m$p + xlim(c(1,10^4)) + theme(legend.position = "none")
 if(SAVE.PLOT){
   ggsave("../figures/simulation_deviance_fixedeffects_beta100.pdf")
   } # Re-save figure with specified x-lim.
@@ -1535,7 +1546,7 @@ m2 <- plot.h2.deviation(
   sigma.scale = "log",
   lin.pred = linear_predictor_fixedeffects,
   simulated.formula = simulated.formula.fixedeffects,
-  Ve = 10^2, fixedeffects = TRUE
+  Ve = 10^2, fixedeffects = TRUE, dynamic.priors = TRUE
 )
 m2$p
 
@@ -1547,7 +1558,7 @@ m3 <- plot.h2.deviation(
   sigma.scale = "log",
   lin.pred = linear_predictor_fixedeffects,
   simulated.formula = simulated.formula.fixedeffects,
-  Ve = 10^2, fixedeffects = TRUE
+  Ve = 10^2, fixedeffects = TRUE, dynamic.priors = TRUE
 )
 m3$p
 
@@ -1564,6 +1575,17 @@ Another thing we can check out, is how the grid plots of heritability scales wou
 plot.fixedeffects.h2 <- function(sA, .dichotomize, include.fixed = T,
                                  sE = 1, beta = 10, SAVE.PLOT = T,
                                  plot.legend=F) {
+  #' Plot h2 density of gaussian and backtransformed probit model,
+  #' 
+  #' Fit simulation models with fixed effects, compute h2 for
+  #' Gaussian and probit case, backtransform probit h2 and plot
+  #' @param sA Additive genetic variance sigma^2_A
+  #' @param .dichotomize character denoting dichotomization method
+  #' @param include.fixed Wether or not to include in denom. of h2
+  #' @param sE Error variance sigma^2_E
+  #' @param beta Weight for fixed effect in linear predictor
+  #' @param SAVE.PLOT Flag for storing plot to disk
+  #' @param plot.legend Flag for including legend in saved plot
   .pc.prior <- c(10^(ceiling(log10(sA))), 0.05)
   fits <- simulated.heritability(
     idgen = 100, dichotomize = .dichotomize, pc.prior = .pc.prior,
