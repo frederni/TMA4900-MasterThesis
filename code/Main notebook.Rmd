@@ -18,14 +18,19 @@ knitr::opts_chunk$set(
 
 # R code acknowledgements {.unlisted .unnumbered}
 
-The data and a large portion of data preprocessing is provided by Jane Reid. The re-implementation into INLA is also largely based on the work from Stefanie Muff.
+The application dataset and a large portion of data preprocessing is provided by Jane Reid. The re-implementation into INLA is also largely based on the work from Stefanie Muff.
 
-# Data loading {.unlisted .unnumbered}
+# Data loading {.unlisted .unnumbered}'
+
+We start by installing and importing required packages.
 
 ```{r data loading}
-if (!require("BiocManager", quietly = TRUE)) {
-  install.packages("BiocManager")
+req.packages <- c("BiocManager", "ggplot2", "latex2exp", "nadiv",
+                  "QGglmm", "cowplot", "reshape2", "showtext")
+for (pack in req.packages){
+  if(!require(pack, quietly = TRUE)) install.packages(pack)
 }
+
 if (!require("GeneticsPed", quietly = TRUE)) {
   BiocManager::install("GeneticsPed")
 }
@@ -33,18 +38,25 @@ if (!require("MCMCglmm", quietly = TRUE)) {
   # rbv patch
   install.packages("../MCMCglmm-rbv-patch.tar.gz")
 }
+if (!require("INLA", quietly = TRUE)) {
+  install.packages(
+    "INLA", repos=c(getOption("repos"),
+                    INLA="https://inla.r-inla-download.org/R/stable"),
+    dep=TRUE)
+
+}
 library(MCMCglmm)
 library(MASS)
 library(nadiv)
 library(bdsmatrix)
 library(INLA)
 library(QGglmm)
-library(ggplot2)
-library(latex2exp)
-library("GeneticsPed")
-library("MCMCglmm")
+
+library(GeneticsPed) # 
 
 # Plotting libraries and settings
+library(ggplot2)
+library(latex2exp) 
 library(cowplot)
 library(grid)
 library(reshape2)
@@ -103,7 +115,7 @@ qg.data.gg.inds$sex <- qg.data.gg.inds$sex.use.x1 - 1
 
 ## Deriving *A* {.unlisted .unnumbered}
 
-For INLA we need ids that run from 1 to the number of individuals
+For INLA we need IDs that run from 1 to the number of individuals
 
 ```{r A matrix}
 d.ped <- nadiv::prepPed(d.ped)
@@ -201,6 +213,7 @@ data.frame(
 )
 ```
 # Latent heritability {.unlisted .unnumbered}
+Below is a function to get $h^2_\text{obs}$, $h^2_\text{lat}$ and $h^2_\Phi$ based on a fitted model. 
 
 ```{r naive heritability func}
 get.h2 <- function(inla.fit, n, use.scale = FALSE, model = NA,
@@ -245,6 +258,8 @@ threshold.scaling.param <- function(p) {
 ```
 
 # Simulation data {.unlisted .unnumbered}
+
+We implement a general simulation method that, based on the passed arguments, generates simulation data and fits animal models onto the dichotomized response. 
 
 ```{r simulation method}
 simulated.heritability <- function(NeNc = 0.5, idgen = 100, nGen = 9,
@@ -444,7 +459,7 @@ get.simulated.threshold.value(
 )
 ```
 
-Seems to fit generally well here. Let's quantitatively look into estimates for different $\sigma^2_A$:
+Seems to fit generally well here. We quantitatively look into estimates for different $\sigma^2_A$:
 
 ## Performance over varying $V_A$ {.unlisted .unnumbered}
 
@@ -607,7 +622,7 @@ plot.h2.deviation <- function(
 }
 ```
 
-We also implement a method to average over several runs, reducing stochasticity.
+We also implement a method to average over several runs, reducing stochasticity. This should be ran on a remote node rather than locally, as just one run takes several minutes.
 
 ```{r}
 multiple.h2.dev <- function(sigma.scale, ntimes,
@@ -680,7 +695,7 @@ multiple.h2.dev <- function(sigma.scale, ntimes,
 
 ```
 
-Let's test it out for different values
+We test out a single run over several values below.
 
 ```{r sim results over V_A}
 ### Plots for sigmaA in (10^-3, 10^3)
@@ -766,7 +781,6 @@ if (SAVE.PLOT) {
   )
 }
 ```
-
 
 
 # Residual analyses on Gaussian model {.unlisted .unnumbered}
@@ -1587,9 +1601,22 @@ plot.fixedeffects.h2 <- function(sA, .dichotomize, include.fixed = T,
   #' @param SAVE.PLOT Flag for storing plot to disk
   #' @param plot.legend Flag for including legend in saved plot
   .pc.prior <- c(10^(ceiling(log10(sA))), 0.05)
+  .linear_predictor_fixedeffects <- function(u, simulated.d.ped) {
+  out <- c()
+  intercept <- 0
+  residuals <- rnorm(length(u), mean = 0, sd = sqrt(sE))
+  for (idx in seq_along(u)) {
+    out <- c(
+      out,
+      intercept + beta * simulated.d.ped$sex[idx] + u[idx] +
+        residuals[idx]
+    )
+    }
+  out
+  }
   fits <- simulated.heritability(
     idgen = 100, dichotomize = .dichotomize, pc.prior = .pc.prior,
-    sigmaA = sA, linear.predictor = linear_predictor_fixedeffects,
+    sigmaA = sA, linear.predictor = .linear_predictor_fixedeffects,
     simulated.formula = simulated.formula.fixedeffects,
     probit.model = TRUE,
     simulated.formula.probit = simulated.formula.probit
@@ -1597,28 +1624,17 @@ plot.fixedeffects.h2 <- function(sA, .dichotomize, include.fixed = T,
   h2.sim.fixed <- get.all.heritabilities(fits$fit, fits$fit.probit,
                                          fits$p, n.samples,
                                          fixed = FALSE)
-  h2.true.fixed <- sA / (sA + sE + beta^2 * 
-                           var(fits$simulated.response)
-                         ) *
-    1 / threshold.scaling.param(fits$p)
 
   p <- ggplot(melt(h2.sim.fixed[, c("gaussian", "probit.qgglmm")])) +
     geom_density(aes(x = value, fill = variable), alpha = 0.5) +
-    geom_vline(aes(xintercept = h2.true.fixed, color = "true"),
-      lwd = 1,
-      linetype = "dashed"
-    ) +
-    scale_color_manual(
-      name = "", labels = TeX("True $h^2_{obs}$"),
-      values = c(true = "darkred")
-    ) +
     scale_fill_discrete(
       name = "",
       labels = c(TeX("Gaussian $h^2_{obs}"),TeX("Probit $h^2_\\Psi$"))
     ) +
     theme(legend.text.align = 0) +
     xlab("Heritability") +
-    ylab("Density") + theme(legend.position = "bottom")
+    ylab("Density") + theme(legend.position = "bottom") +
+    xlim(c(0,1)) + ylim(c(0,10)) # TODO might have to finetune
   if (SAVE.PLOT) {
     p.legend <- cowplot::get_legend(p)
     pdf("../figures/fixedeffects_gaussian_probit_legend.pdf",
@@ -1629,6 +1645,8 @@ plot.fixedeffects.h2 <- function(sA, .dichotomize, include.fixed = T,
     legend.pos <- if(plot.legend) "right" else "none"
     plot.height <- if(plot.legend) 10 else 20
     fn_append <- if(plot.legend) "_wide" else NULL
+    fn_append <- if(beta != 10) paste0(fn_append, "_beta_", beta) else
+      fn_append
     ggsave(
       paste0("../figures/fixedeffects_gaussian_probit_sA", sA,
       "_p_", 10*round(fits$p,1), fn_append, ".pdf"),
@@ -1643,6 +1661,13 @@ plot.fixedeffects.h2(10, "round_balanced")
 plot.fixedeffects.h2(500, 0.1)
 plot.fixedeffects.h2(500,"round_balanced")
 
+# For appendix:
+for(beta_sex in c(1,5)){
+  plot.fixedeffects.h2(sA=10, .dichotomize = "round_balanced",
+                       beta=beta_sex)
+  plot.fixedeffects.h2(sA=500, .dichotomize = "round_balanced",
+                       beta=beta_sex)
+}
 ```
 
 
@@ -1769,18 +1794,9 @@ overdisperion_wrapper <- function(nsamps, vA, vE, SAVE.PLOT) {
     ),
     Gaussian = get.h2(fit.gaussian, nsamps)
   )
-  true.h2.overdisp <- 1 / threshold.scaling.param(overdisp.p) * 
-    vA / (vA + vE)
 
   curr.plot <- ggplot(data = melt(df.probit.comp)) +
     geom_density(aes(x = value, fill = variable), alpha = 0.5) +
-    geom_vline(aes(xintercept = true.h2.overdisp, color = "true"),
-      lwd = 1, linetype = "dashed"
-    ) +
-    scale_color_manual(
-      name = "", labels = c(TeX("True $h^2_{obs}$")),
-      values = c(true = "darkred")
-    ) +
     scale_fill_discrete(name = "", labels = c(
       TeX("$h^2_\\Psi$ with overdispersion"),
       TeX("$h^2_\\Psi$ without overdispersion"),
