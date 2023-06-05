@@ -1794,18 +1794,9 @@ overdisperion_wrapper <- function(nsamps, vA, vE, SAVE.PLOT) {
     ),
     Gaussian = get.h2(fit.gaussian, nsamps)
   )
-  true.h2.overdisp <- 1 / threshold.scaling.param(overdisp.p) * 
-    vA / (vA + vE)
 
   curr.plot <- ggplot(data = melt(df.probit.comp)) +
     geom_density(aes(x = value, fill = variable), alpha = 0.5) +
-    geom_vline(aes(xintercept = true.h2.overdisp, color = "true"),
-      lwd = 1, linetype = "dashed"
-    ) +
-    scale_color_manual(
-      name = "", labels = c(TeX("True $h^2_{obs}$")),
-      values = c(true = "darkred")
-    ) +
     scale_fill_discrete(name = "", labels = c(
       TeX("$h^2_\\Psi$ with overdispersion"),
       TeX("$h^2_\\Psi$ without overdispersion"),
