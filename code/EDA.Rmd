@@ -14,9 +14,9 @@ d.Q <- read.table("../data/Q.data.steffi.txt", header = T)
 qg.data.gg.inds$sex <- qg.data.gg.inds$sex.use.x1 - 1
 ```
 
-## Data frame overview {-}
+# Data frame overview  {.unlisted .unnumbered}
 
-### Pedigree {-}
+## Pedigree  {.unlisted .unnumbered}
 
 The first object is `d.ped` which contains the pedigree information.
 
@@ -30,9 +30,9 @@ It has the columns *ninecode*, *gendam*, and *gensire*. The first column cannot 
 d.ped[is.na(d.ped$gendam), "gensire"]
 ```
 
-We see that *gensire* is NA for all instances where *gendam* is also NA. This is in fact the founder population with no defined parental linkage.
+We see that *gensire* is NA for all instances where *gendam* is also NA. This is the founder population with no defined parental linkage.
 
-### d.Q {-}
+## d.Q {.unlisted .unnumbered}
 
 This table has the columns *g1*, *foc0* and *ninecode* (ID).
 
@@ -62,19 +62,20 @@ table(d.Q[which(d.Q$ninecode %in% founder_population.id),
           c("foc0", "g1")])
 ```
 
-The values seem to be relatively balanced between $0$ and $1$ in the founder population. This supports the idea that they measure the immigration contribution to the genetic composition of the individuals. All immigrant individuals are completely immigrant, have no pedigree and are thus part of the founder population. The latter are those who are the "inital" natives on the island, meaning that their values must be exactly zero.
+The values seem to be relatively balanced between $0$ and $1$ in the founder population. This supports the idea that they measure the immigration contribution to the genetic composition of the individuals. All immigrant individuals are completely immigrant, have no pedigree and are thus part of the founder population. The latter are those who are the "initial" natives on the island, meaning that their values must be exactly zero.
 
-### ped.prune {-}
+## ped.prune {.unlisted .unnumbered}
+
 This is a pruned pedigree, only considering the 1993-2018 observations but also combining the knowledge of the 1975-1992 observations into them.
 
-### qg.data.gg.ind {-}
+## qg.data.gg.ind {.unlisted .unnumbered}
 
 This object has the following shape:
 ```{r}
 head(qg.data.gg.inds)
 ``` 
 
-The response variable we will use is `surv.ind.to.ad`. Some immediate observations:
+The response variable we will use is `surv.ind.to.ad`. Below are some elementary properties of the data.
 
 ```{r}
 paste("Earliest year:", min(qg.data.gg.inds$natalyr))
@@ -92,16 +93,16 @@ An overview over the columns:
 * *natalyr*: Year individual was born, e.g. 2015.
 * *sex.use*: **Not in use**
 * *nestrec*: ID for nest number
-* *brood.date*: Day of the year when the first offspring in individuals nest hatched (I think zero is April 1st, it's in Rekkebo thesis)
+* *brood.date*: Day of the year when the first offspring in individuals nest hatched
 * *sex.use.x1*: Sex of individual, 1 or 2
 * *f.coef*: Inbreeding coefficient
-* *foc0*: "How foreign" individual is, related to f.coef
-* *g1*: Inverse of *foc0* essentially.
+* *foc0*: "How foreign" individual is, related to `f.coef`
+* *g1*: Inverse of *foc0*.
 * *natalyr.no*: The same as natal year, starting with 1974 as 0 (2015=41).
 
 
-## Vizualization of juvenile survival {-}
-We will have a look at how the response, juveniule survival, realtes to the other covariates in our data.
+# Vizualization of juvenile survival {.unlisted .unnumbered}
+We will have a look at how the response, juvenile survival, relates to the other covariates in our data.
 
 First, we look at sex:
 
@@ -151,8 +152,7 @@ ggplot(aggregate(surv.ind.to.ad ~ natalyr, qg.data.gg.inds,
   scale_x_continuous(breaks = seq(1993, 2018, by = 4))
 ```
 
-There seem to be very little trending along the years, but possibly a small negative trend. Let's also see if there is some correspondence between genetic group coefficient (`g1`) and juvenile survival.
-
+There seem to be very little trending along the years, but possibly a small negative trend. We also examine if there is some correspondence between genetic group coefficient (`g1`) and juvenile survival.
 
 ```{r}
 ggplot(qg.data.gg.inds, aes(x = g1, fill = factor(surv.ind.to.ad))) +
