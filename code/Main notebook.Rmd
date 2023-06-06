@@ -627,15 +627,15 @@ We also implement a method to average over several runs, reducing stochasticity.
 ```{r}
 multiple.h2.dev <- function(sigma.scale, ntimes,
                             title = "Simulation heritability", ...){
-  #' Run plot_h2_deviation `ntimes` and report mean
+  #' Run plot_h2_deviation `ntimes`
   #' 
-  #' Repeats the runs several times, and outputs error plot,
-  #' (pointrange) with mean +- SD
-  #' @param sigma.scale either 'log' or 'small', like in other fnc.
+  #' Repeats the runs several times, and outputs error plot with
+  #' mean +- SD
+  #' @param sigma.scale Sigma values to test, either 'log' or 'small'
   #' @param ntimes Number of repeated runs
-  #' @param title Legend title, character
-  #' @param ... Additional parameters to plot_h2_deviation
-  #' @return ggplot object
+  #' @param title Legend title, charcter
+  #' @param ... Additional parameters for plot_h2_deviation
+  #' @return Dataframe with all info to plot the errorplots
 
   if (sigma.scale == "log") {
     sigmaA.list <- c(1:10 %o% 10^(-3:3))
@@ -651,7 +651,8 @@ multiple.h2.dev <- function(sigma.scale, ntimes,
   all.truevals <- matrix(ncol = ntimes, nrow = n.sigma)
   for(i in 1:ntimes){
     cat(paste0("\n [Run ", i ,"/", ntimes, "]\n"))
-    res <- plot.h2.deviation(SAVE.PLOT = FALSE, ...)
+    res <- plot.h2.deviation(SAVE.PLOT = FALSE, sigma.scale=sigma.scale, ...)
+    cat("Latent:", res$p$data$latent)
     all.h2obs[, i] <- res$p$data$latent
     all.h2liab[, i] <- res$p$data$estimate
     all.truevals[, i] <- res$p$data$true.vals
@@ -662,34 +663,17 @@ multiple.h2.dev <- function(sigma.scale, ntimes,
     top = c(rowMeans(all.h2obs) + apply(all.h2obs, 1, sd),
             rowMeans(all.h2liab) + apply(all.h2liab, 1, sd),
             rowMeans(all.truevals) + apply(all.truevals, 1, sd)
-            ),
+    ),
     mid = c(rowMeans(all.h2obs), rowMeans(all.h2liab),
             rowMeans(all.truevals)
-            ),
+    ),
     btm = c(rowMeans(all.h2obs) - apply(all.h2obs, 1, sd),
             rowMeans(all.h2liab) - apply(all.h2liab, 1, sd),
             rowMeans(all.truevals) - apply(all.truevals, 1, sd)
-            ),
+    ),
     xax = rep(sigmaA.list, times=3)
   )
-  ggplot(plot.data, aes(x=xax)) +
-    geom_pointrange(aes(ymax=top, ymin=btm, y=mid, color=model)) +
-    xlab(TeX("$\\sigma_A^2$")) +
-    ylab(TeX("$h^2$")) +
-    scale_x_log10() +
-    scale_color_manual(
-      name = title,
-      values = c(
-        "atrue" = "darkred", "bliab" = "steelblue",
-        "obs" = "chartreuse3"
-      ),
-      labels = c(
-        expression("True " * h["liab"]^2),
-        expression("Fitted " * h["liab"]^2),
-        expression("Fitted " * h["obs"]^2)
-      )
-    ) +
-    theme(text = element_text(size = 18), legend.text.align = 0)
+  return(plot.data)
 }
 
 
@@ -720,7 +704,48 @@ plot.h2.deviation(
   plot.fn = "binom", dynamic.priors = TRUE
 )
 ```
+If multiple runs have been done on remote server, loads and plots the results here,
+```{r }
+# Multiple h^2 deviation plotter
+markov.plotter <- function(df, legend.name=""){
+  ggplot(df, aes(x=xax)) +
+    geom_pointrange(aes(ymax=top, ymin=btm, y=mid, color=model)) +
+    xlab(TeX("$\\sigma_A^2$")) +
+    ylab(TeX("$h^2$")) +
+    scale_x_log10() +
+    scale_color_manual(
+      name = legend.name,
+      values = c(
+        "true" = "darkred", "h2liab" = "steelblue",
+        "h2obs" = "chartreuse3"
+      ),
+      labels = c(
+        expression("True " * h["liab"]^2),
+        expression("Fitted " * h["liab"]^2),
+        expression("Fitted " * h["obs"]^2)
+      )
+    ) +
+    theme(text = element_text(size = 18), legend.postion = "none") 
+}
+load("markovh2dev_50_runs.Rdata")
+mp1 <- markov.plotter(markov_result1)
+mp2 <- markov.plotter(markov_result2)
+mp3 <- markov.plotter(markov_result3,
+                      legend.name="Simulation heritability")
+ggsave("../figures/simulation_deviance_round.pdf", mp1)
+ggsave("../figures/simulation_deviance_small.pdf", mp2)
+ggsave("../figures/simulation_deviance_binom.pdf", mp3)
+# Store legend separately
+mp3.legend <- cowplot::get_legend(
+  mp3 +theme(legend.position = "right", legend.text.align = 0))
+pdf("../figures/simulation_deviance_legend.pdf",
+    width = 7.87402, height = 7.87402)
+grid.newpage()
+grid.draw(mp3.legend)
+dev.off()
 
+
+```
 
 ## Without residual in linear predictor {.unlisted .unnumbered}
 We also check what happens if we rerun with $\eta_i=a_i$, i.e. without residuals on underlying scale. Similar results.
@@ -1578,6 +1603,27 @@ m3$p
 
 # How unbalanced is the response?
 summary(m3$p$data$plist)
+```
+
+Similar to the case without fixed effects, we provide code for plotting based on results form remote server.
+```{r}
+load("markovfixed_50_runs.Rdata")
+mp4 <- markov.plotter(res.fixed1)
+mp5 <- markov.plotter(res.fixed2)
+mp6 <- markov.plotter(res.fixed3,
+  legend.name="Simulation heritability for\nfixed effects model")
+fixed.fn <- "../figures/simulation_deviance_fixedeffects_"
+ggsave(paste0(fixed.fn, "beta100.pdf"),
+       mp4+xlim(c(1,10^4)))
+ggsave(paste0(fixed.fn, "beta10.pdf"), mp5)
+ggsave(paste0(fixed.fn, "beta10_unbalanced.pdf", mp6))
+mp6.legend <- cowplot::get_legend(
+  mp6 +theme(legend.position = "right", legend.text.align = 0))
+pdf("../figures/simulation_deviance_fixedeffects_legend.pdf",
+    width = 7.87402, height = 7.87402)
+grid.newpage()
+grid.draw(mp6.legend)
+dev.off()
 ```
 
 For sufficiently large choice of $\beta$ corresponding to sex, we get progressively worse results as is expected.
