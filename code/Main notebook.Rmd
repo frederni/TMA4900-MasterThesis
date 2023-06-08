@@ -719,17 +719,17 @@ markov.plotter <- function(df, legend.name=""){
         "h2obs" = "chartreuse3"
       ),
       labels = c(
-        expression("True " * h["liab"]^2),
         expression("Fitted " * h["liab"]^2),
-        expression("Fitted " * h["obs"]^2)
+        expression("Fitted " * h["obs"]^2),
+        expression("True " * h["liab"]^2)
       )
     ) +
-    theme(text = element_text(size = 18), legend.postion = "none") 
+    theme(text = element_text(size = 18), legend.position = "none")
 }
 load("markovh2dev_50_runs.Rdata")
-mp1 <- markov.plotter(markov_result1)
-mp2 <- markov.plotter(markov_result2)
-mp3 <- markov.plotter(markov_result3,
+mp1 <- markov.plotter(markov.result1)
+mp2 <- markov.plotter(markov.result2)
+mp3 <- markov.plotter(markov.result3,
                       legend.name="Simulation heritability")
 ggsave("../figures/simulation_deviance_round.pdf", mp1)
 ggsave("../figures/simulation_deviance_small.pdf", mp2)
