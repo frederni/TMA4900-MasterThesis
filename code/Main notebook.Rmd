@@ -1842,8 +1842,8 @@ overdisperion_wrapper <- function(nsamps, vA, vE, SAVE.PLOT) {
   curr.plot <- ggplot(data = melt(df.probit.comp)) +
     geom_density(aes(x = value, fill = variable), alpha = 0.5) +
     scale_fill_discrete(name = "", labels = c(
-      TeX("$h^2_\\Psi$ with overdispersion"),
-      TeX("$h^2_\\Psi$ without overdispersion"),
+      TeX("$h^2_\\Psi$ with iid effect"),
+      TeX("$h^2_\\Psi$ without iid effect"),
       TeX("$h^2_{obs}$")
     )) +
     xlab("Heritability") +
