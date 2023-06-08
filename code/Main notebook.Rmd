@@ -92,11 +92,11 @@ FORMULA.EXTRA.IID.NOISE <- FALSE
 ```
 
 Below we do a couple more preprocessing steps, namely:
-- build a pedigree structure from the denormalized table with \texttt{prepPed}.
-- assign new IDs to each individual starting at $1$.
-- keep a mapping record between the original IDs (ninecode) and the new $1$-indexed IDs.
-- use this mapping to transform the IDs for each individual's Dam and Sire to the same.
-- compute the inverse of the relatedness matrix.
+* build a pedigree structure from the denormalized table with \texttt{prepPed}.
+* assign new IDs to each individual starting at $1$.
+* keep a mapping record between the original IDs (ninecode) and the new $1$-indexed IDs.
+* use this mapping to transform the IDs for each individual's Dam and Sire to the same.
+* compute the inverse of the relatedness matrix.
 
 ```{r data scaling}
 # Scale the continuous variances for stability
@@ -140,7 +140,7 @@ qg.data.gg.inds$id <- d.map[
   match(qg.data.gg.inds$ninecode, d.map$ninecode),
   "id"
 ]
-qg.data.gg.inds$u <- seq_len(nrow(qg.data.gg.inds)) # Extra IID effect
+qg.data.gg.inds$u <- seq_len(nrow(qg.data.gg.inds))
 ```
 
 
@@ -172,7 +172,7 @@ formula.inla.scaled <- surv.ind.to.ad ~ f.coef.sc + g1.sc +
     hyper = list(
       prec = list(initial = log(1 / 10), prior = "pc.prec",
                   param = c(1, 0.05))
-    )
+    ) # PC priors
   )
 if (FORMULA.EXTRA.IID.NOISE) {
   formula.inla.scaled <- update(
@@ -188,7 +188,7 @@ if (FORMULA.EXTRA.IID.NOISE) {
 }
 ```
 
-Now we call INLA models (this takes some time). Note that we pass some control arguments to the function call. We compute DIC (Deviance information criterion) for all models with `dic` flag in `control.compute`.  For the binomial models, we want to be able to use `QGglmm` and average over all fixed effects. This is done by supplying the *latent marginal predicted values*, which are not computed unless you pass the `return.marginals.predictor` flag set to true. We also want to set the `CPO` flag to true in the Gaussian model, so we can look a bit at its "residuals" (PIT values). Lastly, the `control.family` argument is used to pass the link functions for binomial models.
+Now we call INLA models. Note that we pass some control arguments to the function call. We compute DIC (Deviance information criterion) for all models with `dic` flag in `control.compute`.  For the binomial models, we want to be able to use `QGglmm` and average over all fixed effects. This is done by supplying the *latent marginal predicted values*, which are not computed unless you pass the `return.marginals.predictor` flag set to true. We also want to set the `CPO` flag to true in the Gaussian model, so we can look a bit at its "residuals" (PIT values). Lastly, the `control.family` argument is used to pass the link functions for binomial models.
 
 ```{r inla fitting}
 fit.inla.probit <- inla(
@@ -233,8 +233,7 @@ get.h2 <- function(inla.fit, n, use.scale = FALSE, model = NA,
     denominator <- denominator + 1 / samples[, cname]
   }
   if (include.fixed) {
-    # Currently it just takes the SD instead of sampling,
-    # didn't find an easy way to sample fixed effect estimates..
+    # Grab variance from summary object in INLA fit
     denominator <- denominator + sum(inla.fit$summary.fixed[, "sd"]^2)
   }
 
@@ -252,7 +251,7 @@ get.h2 <- function(inla.fit, n, use.scale = FALSE, model = NA,
 }
 
 threshold.scaling.param <- function(p) {
-  # h^2_l = threshold.scaling.param * h^2_obs
+  # h^2_liab = threshold.scaling.param * h^2_obs
   p * (1 - p) / (dnorm(qnorm(p)))^2
 }
 ```
@@ -459,7 +458,7 @@ get.simulated.threshold.value(
 )
 ```
 
-Seems to fit generally well here. We quantitatively look into estimates for different $\sigma^2_A$:
+Further, we quantitatively look into estimates for different $\sigma^2_A$:
 
 ## Performance over varying $V_A$ {.unlisted .unnumbered}
 
@@ -757,7 +756,7 @@ get.simulated.threshold.value(
 )
 ```
 
-Now we want to look into how A (relatedness matrix) looks like.
+Now we want to look into how $\mathbf{A}$ (the relatedness matrix) looks like.
 ```{r relatedness density}
 plot.A.matrix <- function(pedigree, title.append = NULL) {
   #' Plot histogram of relatedness from pedigree
@@ -825,7 +824,7 @@ ggplot(data = data.frame(
 )) +
   geom_point(aes(x = Quantiles, y = PIT)) +
   ggtitle("Sorted PIT values for Gaussian model") +
-  theme(title = element_text(size = 16))
+  theme(text = element_text(size = 14))
 if (SAVE.PLOT) ggsave("../figures/PIT-sorted.pdf")
 
 # <Plot 2> Posterior mean fitted values as a function of PIT values
@@ -842,7 +841,7 @@ ggplot(
     x = "Posterior fitted values (mean)",
     y = "PIT value"
   ) +
-  theme(title = element_text(size = 16))
+  theme(text = element_text(size = 14))
 if (SAVE.PLOT) ggsave("../figures/PIT-over-fitted.pdf")
 
 
@@ -869,7 +868,7 @@ ggplot(
     values = c("darkred", "steelblue")
   ) +
   labs(title = "Residuals of Gaussian model", x = "Index",
-       y = "Residuals")
+       y = "Residuals") + theme(text=element_text(size=14))
 if (SAVE.PLOT) ggsave("../figures/Residuals-gaussian.pdf")
 ```
 
@@ -1146,7 +1145,7 @@ h2.psi.sim2$noavg <- get.h2.from.qgparams(fit.sim.probit,
 )
 ```
 
-Let's see how it looks like.
+
 ```{r plot h2 qgglmm methods}
 plot.qgglmm.heritability <- function(h2.psi, dataset, SAVE.PLOT,
                                      plot.title = NA,
@@ -1312,7 +1311,6 @@ print.heritability.table <- function(digits, h2, simulation = T) {
   #' @param digits Number of significant digits
   #' @param h2 Heritability DF with different scales
   #' @param simulation Simulation flag for the table's filename
-  #' @return None (invisible `NULL`)
   filename <- ifelse(simulation, "heritability simulation",
       "heritability application")
   header <- paste(
@@ -1454,10 +1452,10 @@ plot.h2.sim$p
 ```
 
 Key takeaways:
-- The Gaussian model to liability scale doesn't fit well with the other latent models.
-- The scalings from binomial latent onto data scale fit well with the Gaussian one
+* The Gaussian model to liability scale doesn't fit well with the other latent models.
+* The scalings from binomial latent onto data scale fit well with the Gaussian one
 
-The ones we really care about, is plot $(1,2)$ (p3) and $(2,3)$ (p6), so let's extract them in particular
+The ones of greatest importance are plots $(1,2)$ (p3) and $(2,3)$ (p6), so we extract them in particular
 
 ```{r key plots heritability scales}
 plot.h2.appl$p3 +
@@ -1512,9 +1510,9 @@ data.frame(
 
 # Fixed effects for simulation {.unlisted .unnumbered}
 
-Okay, let's try to add sex covariate to linear predictor. We use that
+We now add a sex covariate to the linear predictor. We use that
 $$
-\operatorname{Var}[\beta_{\text{sex}}\mathbf{x}_{\text{sex}}] = \beta_{\text{sex}}^2  \operatorname{Var}[\mathbf{x}_{\text{sex}}]
+\operatorname{Var}[\beta_{\text{sex}}\mathbf{x}_{\text{sex}}] = \beta_{\text{sex}}^2  \sigma^2_\text{sex}
 $$
 
 ```{r fixed effects simulation}
@@ -1629,7 +1627,7 @@ dev.off()
 For sufficiently large choice of $\beta$ corresponding to sex, we get progressively worse results as is expected.
 
 ## Fixed effect model performance {.unlisted .unnumbered}
-Another thing we can check out, is how the grid plots of heritability scales would look like if we use a Gaussian and probit model with (somewhat dominating) fixed effect. We do that here:
+Another aspect we can examine, is how the grid plots of heritability scales would look like if we use a Gaussian and probit model with (somewhat dominating) fixed effect. This is implemented below.
 
 ```{r}
 plot.fixedeffects.h2 <- function(sA, .dichotomize, include.fixed = T,
@@ -1808,7 +1806,7 @@ alternative.probit.sim <- function(sigmaA, linear.predictor,
 }
 ```
 
-Here, we fit a probit with the formula $y_i = \beta_0 + a_i + \phi_i$, where the last is a random effect. The simulated data has overdisperion in its data via the residual vector being $\mathcal N(0,3)$.
+Here, we fit a probit with the formula $y_i = \beta_0 + a_i + \gamma_{0,i}$, where the last is a random iid effect. The simulated data has overdisperion in its data via the residual vector being $\mathcal N(0,3)$.
 
 ```{r}
 overdisperion_wrapper <- function(nsamps, vA, vE, SAVE.PLOT) {
