@@ -1889,13 +1889,10 @@ sample_ids <- sort(c(LETTERS, letters))[1:40]
 eta_df <- data.frame(
   elem = c(
     rep(sample_ids[1:20], each = 900), # Latent eta
-    rep(sample_ids[21:40], each = 900), # Phi(eta)
-    rep("z", 900)
-  ), # True observations
+    rep(sample_ids[21:40], each = 900)), # Phi(eta)
   value = c(
     unlist(eta_samples),
-    pnorm(unlist(eta_samples)),
-    mod$simulated.response
+    pnorm(unlist(eta_samples))
   )
 )
 custom_palette <- c(
@@ -1906,21 +1903,19 @@ custom_palette <- c(
 ggplot(eta_df) +
   geom_line(aes(x = value, color = elem), stat = "density",
             alpha = 0.25, size = 2) +
+  # True values
+  geom_vline(xintercept=0,size=2,color='green4') +
+  geom_vline(xintercept=1, size=2, color='green4') +
   scale_color_manual(values = custom_palette) +
   theme(legend.position = "none") +
   xlab("(Predicted) response") +
-  ylab("Density") +
-  # Plot true observations once more to get more visible green color
-  geom_line(
-    data = eta_df[eta_df$elem == "z", ], aes(x = value, color = elem),
-    stat = "density", alpha = 0.5, size = 2
-  )
+  ylab("Density")
 if (SAVE.PLOT) {
   ggsave("../figures/illustration_probit_scales_fitted_values.pdf",
     width = 20, height = 10, units = "cm"
   )
   # Generate legend
-  plegend <- cowplot::get_legend(
+  plegend <- ggpubr::get_legend(
     ggplot(melt(data.frame(r = rnorm(1), b = rnorm(1),
                            t = rnorm(1)))) +
       geom_line(aes(x = value, color = variable), stat = "density",
@@ -1929,9 +1924,11 @@ if (SAVE.PLOT) {
         name = "",
         labels = c(TeX("$\\eta$"), TeX("$\\Phi(\\eta)$"),
                    "True observations"),
-        values = c(r = "darkred", b = "darkblue", t = "darkgreen")
+        values = c(r = "darkred", b = "darkblue", t = "green4")
       ) +
-      theme(legend.text.align = 0, legend.position = "bottom")
+      theme(legend.text.align = 0, legend.position = "bottom",
+            text = element_text(family = texfont)
+      )
   )
   pdf("../figures/illustration_probit_scales_fitted_values_legend.pdf",
     width = 4.2, height = 1
@@ -1966,4 +1963,30 @@ if (SAVE.PLOT) {
     width = 20, height = 10, units = "cm"
   )
 }
+```
+
+The final plot is an illustration of the threshold model.
+
+```{r}
+threshold.illustration <- function(){
+  x <- seq(-3, 3, length.out = 100)
+  threshold <- -0.4
+  df <- data.frame(x = x, y = dnorm(x))
+  df$samps <- c(rep(NA,10), runif(80, 0, dnorm(x[11:90])), rep(NA,10))
+  df$sampscol <- ifelse(df$x >= threshold, "a", "b")
+  cols <- c(hcl(h=seq(15,375,length=3), l=65, c=100)[1:2])
+  # Create the ggplot
+  ggplot(df, aes(x = x, y = y)) +
+    geom_point(aes(x = x, y = samps, colour = sampscol)) +
+    geom_line(linewidth=0.7) + ylab("") + xlab("") +
+    geom_vline(aes(xintercept=threshold, linetype='Threshold M'),
+               linewidth=0.7) +
+    theme_classic(14) + theme(text=element_text(family=texfont)) +
+    scale_color_manual(name="", values=cols,
+                       labels=c("Phenotype 2","Phenotype 1")) +
+    scale_linetype_manual(name="", values=c('Threshold M'=2))
+  ggsave("../figures/illustration_thresholdmodel.pdf",
+         width=20, height=10, units="cm")  
+}
+
 ```
