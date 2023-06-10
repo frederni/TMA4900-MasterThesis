@@ -1614,7 +1614,7 @@ fixed.fn <- "../figures/simulation_deviance_fixedeffects_"
 ggsave(paste0(fixed.fn, "beta100.pdf"),
        mp4+xlim(c(1,10^4)))
 ggsave(paste0(fixed.fn, "beta10.pdf"), mp5)
-ggsave(paste0(fixed.fn, "beta10_unbalanced.pdf", mp6))
+ggsave(paste0(fixed.fn, "beta10_unbalanced.pdf"), mp6)
 mp6.legend <- cowplot::get_legend(
   mp6 +theme(legend.position = "right", legend.text.align = 0))
 pdf("../figures/simulation_deviance_fixedeffects_legend.pdf",
