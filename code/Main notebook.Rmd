@@ -27,8 +27,15 @@ We start by installing and importing required packages.
 ```{r data loading}
 req.packages <- c("BiocManager", "ggplot2", "latex2exp", "nadiv",
                   "QGglmm", "cowplot", "reshape2", "showtext")
-for (pack in req.packages){
-  if(!require(pack, quietly = TRUE)) install.packages(pack)
+to.install <- req.packages[
+  is.na(match(req.packages, installed.packages()[,1]))
+  ]
+if(length(to.install) > 0L){
+  install.packages(to.install)
+}
+for(pack in req.packages){
+  suppressPackageStartupMessages(
+    library(pack,character.only = TRUE, quietly = TRUE))
 }
 
 if (!require("GeneticsPed", quietly = TRUE)) {
@@ -47,20 +54,14 @@ if (!require("INLA", quietly = TRUE)) {
 }
 library(MCMCglmm)
 library(MASS)
-library(nadiv)
 library(bdsmatrix)
 library(INLA)
-library(QGglmm)
 
 library(GeneticsPed) # 
 
 # Plotting libraries and settings
-library(ggplot2)
-library(latex2exp) 
-library(cowplot)
+
 library(grid)
-library(reshape2)
-library(showtext)
 texfont <- "CMU Serif"
 showtext_auto()
 font.paths(file.path(
@@ -1981,12 +1982,13 @@ threshold.illustration <- function(){
     geom_line(linewidth=0.7) + ylab("") + xlab("") +
     geom_vline(aes(xintercept=threshold, linetype='Threshold M'),
                linewidth=0.7) +
-    theme_classic(14) + theme(text=element_text(family=texfont)) +
+    theme_classic(24) + theme(text=element_text(family=texfont)) +
     scale_color_manual(name="", values=cols,
                        labels=c("Phenotype 2","Phenotype 1")) +
     scale_linetype_manual(name="", values=c('Threshold M'=2))
   ggsave("../figures/illustration_thresholdmodel.pdf",
          width=20, height=10, units="cm")  
 }
+threshold.illustration()
 
 ```
