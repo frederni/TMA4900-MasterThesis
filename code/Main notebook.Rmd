@@ -1678,8 +1678,7 @@ plot.fixedeffects.h2 <- function(sA, .dichotomize, include.fixed = T,
     ) +
     theme(legend.text.align = 0) +
     xlab("Heritability") +
-    ylab("Density") + theme(legend.position = "bottom") +
-    xlim(c(0,1)) + ylim(c(0,10)) # TODO might have to finetune
+    ylab("Density") + theme(legend.position = "bottom")
   if (SAVE.PLOT) {
     p.legend <- cowplot::get_legend(p)
     pdf("../figures/fixedeffects_gaussian_probit_legend.pdf",
