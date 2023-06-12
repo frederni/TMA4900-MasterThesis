@@ -20,7 +20,7 @@ knitr::opts_chunk$set(
 
 The application dataset and a large portion of data preprocessing is provided by Jane Reid. The re-implementation into INLA is also largely based on the work from Stefanie Muff.
 
-# Data loading {.unlisted .unnumbered}'
+# Data loading {.unlisted .unnumbered}
 
 We start by installing and importing required packages.
 
@@ -710,6 +710,7 @@ If multiple runs have been done on remote server, loads and plots the results he
 markov.plotter <- function(df, legend.name=""){
   ggplot(df, aes(x=xax)) +
     geom_pointrange(aes(ymax=top, ymin=btm, y=mid, color=model)) +
+    geom_line(aes(y=mid, color=model)) + 
     xlab(TeX("$\\sigma_A^2$")) +
     ylab(TeX("$h^2$")) +
     scale_x_log10() +
