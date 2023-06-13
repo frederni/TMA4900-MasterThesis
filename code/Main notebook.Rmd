@@ -651,7 +651,8 @@ multiple.h2.dev <- function(sigma.scale, ntimes,
   all.truevals <- matrix(ncol = ntimes, nrow = n.sigma)
   for(i in 1:ntimes){
     cat(paste0("\n [Run ", i ,"/", ntimes, "]\n"))
-    res <- plot.h2.deviation(SAVE.PLOT = FALSE, sigma.scale=sigma.scale, ...)
+    res <- plot.h2.deviation(SAVE.PLOT = FALSE,
+                             sigma.scale = sigma.scale, ...)
     cat("Latent:", res$p$data$latent)
     all.h2obs[, i] <- res$p$data$latent
     all.h2liab[, i] <- res$p$data$estimate
