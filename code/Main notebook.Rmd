@@ -1332,7 +1332,8 @@ print.heritability.table <- function(digits, h2, simulation = T) {
     "Probit $h^2_{\\Phi}$ &",
     print.one.metric(h2, "probit.scaled", digits), "\\\\ \n",
     "Probit $h^2_{\\Psi}$ &",
-    print.one.metric(h2, "probit.qgglmm", digits), "\n"
+    print.one.metric(h2, "probit.qgglmm", digits), "\\\\ \n",
+    "\\bottomrule"
   )
   footer <- "\\end{tabular}"
 
