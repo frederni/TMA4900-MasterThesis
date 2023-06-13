@@ -1325,14 +1325,13 @@ print.heritability.table <- function(digits, h2, simulation = T) {
   main <- paste(
     " Gaussian $h^2_\\text{obs}$ &",
     print.one.metric(h2, "gaussian", digits), "\\\\ \n",
-    "Gaussian $h^2_\\text{liab}$ &",
-    print.one.metric(h2, "gaussian.liability", digits), "\\\\ \n",
-    "Probit $h^2_\\text{lat}$ &",
-    print.one.metric(h2, "probit.latent", digits), "\\\\ \n",
-    "Probit $h^2_{\\Phi}$ &",
-    print.one.metric(h2, "probit.scaled", digits), "\\\\ \n",
     "Probit $h^2_{\\Psi}$ &",
     print.one.metric(h2, "probit.qgglmm", digits), "\\\\ \n",
+    " & & & \\\\ \n",
+    "Gaussian $h^2_\\text{liab}$ &",
+    print.one.metric(h2, "gaussian.liability", digits), "\\\\ \n",
+    "Probit $h^2_{\\Phi}$ &",
+    print.one.metric(h2, "probit.scaled", digits), "\\\\ \n",
     "\\bottomrule"
   )
   footer <- "\\end{tabular}"
