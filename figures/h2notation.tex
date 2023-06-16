@@ -1,0 +1,31 @@
+\begin{landscape}
+\begin{table}[htb]
+\renewcommand{\arraystretch}{1.8}%
+\begin{tabularx}{\linewidth}{lLLLL}
+\toprule
+Notation    & $h^2_\text{obs}$  &  $h^2_\Psi$ & $h^2_\text{liab}$   & $h^2_\Phi$ \\ \midrule
+Scale       & Observation $y_i$ &  Observation $y_i$ & Liability $\Tilde{\eta_i}$ &  Liability $\eta_i$ and $\Tilde{\eta_i}$ \\
+Model       & Gaussian &  Probit &  Gaussian & Probit \\
+Expression  & $\sigma^2_{A,\text{obs}}/\sigma^2_{P,\text{obs}}$
+            & \autoref{alg:qgglmm} using $\sigma^2_{i,\text{lat}} \; \forall i$
+            & $\sigma^2_{A,\text{liab}}/\left[\sum_i (\sigma^2_{i,\text{liab}})\right]$
+            & $\sigma^2_{A,\text{lat}}/\left[\sum_i (\sigma^2_{i,\text{lat}})+1\right]$ \\
+Interpretation &
+    Observation-scale heritability directly computed from fitted values of variance components. Should be comparable to $h^2_\Psi$. &
+    Observation-level heritability obtained by passing the latent fitted values to the back-transformation algorithm. Should be comparable to $h^2_\text{obs}$. &
+    Liability scale either directly computed from an underlying continuous scale (in simulations) or by scaling the observation-level fitted values using the coefficient from the threshold model. &
+    Liability-scale heritability from transforming the latent scale by adding variance related to the link function, here $+1$ (for a probit link). Should be comparable to $h^2_\text{liab}$. \\
+Details & % h^2 obs:
+            The proportion of total variance explained by genetic factors.
+            & % h^2 Psi
+            Estimators (originally) on latent scale
+            & % h^2 liab:
+            With threshold model transformation, $h^2_\text{liab}=p(1-p)/t^2 \cdot h^2_\text{obs}$, where $t$ is the $p$th quantile of a $\mathcal N(0,1)$ density.
+            & % h^2 Phi
+            Estimators are on latent scale, and assuming probit link. \\
+\bottomrule
+\end{tabularx}
+\caption[Overview over $h^2$ notation and scales]{An overview of the different heritability scales used in this thesis. For clarity, we explicitly include the scales that the estimated variance components have in the respective subscripts. For instance, $\sigma^2_{A,\text{obs}}$ is when $\sigma^2_A$ is on the observation scale (that is, Gaussian model), $\sigma^2_{A,\text{liab}}$ denotes when $\sigma^2_A$ has a liability scale, and $\sigma^2_{A,\text{lat}}$ denotes when it has a latent scale.}
+\label{tab:h2 notation}
+\end{table}
+\end{landscape}

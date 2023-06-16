@@ -1,0 +1,258 @@
+\hypertarget{data-frame-overview}{%
+\section*{Data frame overview}\label{data-frame-overview}}
+
+\hypertarget{pedigree}{%
+\subsection*{Pedigree}\label{pedigree}}
+
+The first object is \texttt{d.ped} which contains the pedigree
+information.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{summary}\NormalTok{(d.ped)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+##     ninecode             gendam             gensire         
+##  Min.   :109137448   Min.   :109137468   Min.   :109137448  
+##  1st Qu.:146164012   1st Qu.:146130794   1st Qu.:146130313  
+##  Median :176124850   Median :176124382   Median :176124004  
+##  Mean   :196520240   Mean   :188116000   Mean   :185463038  
+##  3rd Qu.:243185045   3rd Qu.:226189260   3rd Qu.:226189228  
+##  Max.   :999999999   Max.   :999999999   Max.   :266176829  
+##                      NA's   :59          NA's   :59
+\end{verbatim}
+
+It has columns \emph{ninecode}, \emph{gendam}, and \emph{gensire}.
+The first column cannot be \texttt{NA} and is the unique identifier for
+an individual, whereas \texttt{gendam} and \texttt{gensire} are
+references (foreign keys) to the known maternal and paternal link,
+respectively. Both of these columns have 59 NAs. In fact, these NAs
+overlap completely since they are the founder population with no defined
+paternal or maternal link:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{d.ped[}\FunctionTok{is.na}\NormalTok{(d.ped}\SpecialCharTok{$}\NormalTok{gendam), }\StringTok{"gensire"}\NormalTok{]}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+##  [1] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+## [26] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+## [51] NA NA NA NA NA NA NA NA NA
+\end{verbatim}
+
+We see that \emph{gensire} is NA for all instances where \emph{gendam}
+is also NA. This is the founder population with no defined parental
+linkage.
+
+\hypertarget{d.q}{%
+\subsection*{d.Q}\label{d.q}}
+
+This table has the columns \emph{g1}, \emph{foc0} and \emph{ninecode}
+(ID).
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{head}\NormalTok{(d.Q)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+##   foc0 g1  ninecode
+## 1    1  0 109137407
+## 2    1  0 109137408
+## 3    1  0 109137418
+## 4    1  0 109137420
+## 5    1  0 109137421
+## 6    1  0 109137425
+\end{verbatim}
+
+Considering only the first results, it might seem like \texttt{foc0} and
+\texttt{g1} are binary/categorical variables, but plotting the values
+across indices show that the order of the rows are structured so that
+they start at 1 and 0 respectively.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{par}\NormalTok{(}\AttributeTok{mfrow =} \FunctionTok{c}\NormalTok{(}\DecValTok{1}\NormalTok{, }\DecValTok{2}\NormalTok{))}
+\FunctionTok{plot}\NormalTok{(d.Q}\SpecialCharTok{$}\NormalTok{g1, }\AttributeTok{main =} \StringTok{"g1"}\NormalTok{)}
+\FunctionTok{plot}\NormalTok{(d.Q}\SpecialCharTok{$}\NormalTok{foc0, }\AttributeTok{main =} \StringTok{"foc0"}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\includegraphics{EDA_files/figure-latex/unnamed-chunk-2-1.pdf}
+
+We can also look at the correlation between these two values
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{cor}\NormalTok{(d.Q}\SpecialCharTok{$}\NormalTok{foc0, d.Q}\SpecialCharTok{$}\NormalTok{g1)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+## [1] -1
+\end{verbatim}
+
+Hence, we have a very strong negative correlation here. We can also look
+at the individuals whose ID were in the \emph{founder population}:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{founder\_population.id }\OtherTok{\textless{}{-}}\NormalTok{ d.ped[}\FunctionTok{is.na}\NormalTok{(d.ped}\SpecialCharTok{$}\NormalTok{gendam), }\StringTok{"ninecode"}\NormalTok{]}
+\FunctionTok{table}\NormalTok{(d.Q[}\FunctionTok{which}\NormalTok{(d.Q}\SpecialCharTok{$}\NormalTok{ninecode }\SpecialCharTok{\%in\%}\NormalTok{ founder\_population.id),}
+          \FunctionTok{c}\NormalTok{(}\StringTok{"foc0"}\NormalTok{, }\StringTok{"g1"}\NormalTok{)])}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+##     g1
+## foc0  0  1
+##    0  0 33
+##    1 26  0
+\end{verbatim}
+
+The values seem to be relatively balanced between \(0\) and \(1\) in the
+founder population. This supports the idea that they measure the
+immigration contribution to the genetic composition of the individuals.
+All immigrant individuals are completely immigrant, have no pedigree and
+are thus part of the founder population. The latter are those who are
+the ``initial'' natives on the island, meaning that their values must be
+exactly zero.
+
+\hypertarget{ped.prune}{%
+\subsection*{ped.prune}\label{ped.prune}}
+
+This is a pruned pedigree, only considering the 1993-2018 observations
+but also combining the knowledge of the 1975-1992 observations into
+them.
+
+\hypertarget{qg.data.gg.ind}{%
+\subsection*{qg.data.gg.ind}\label{qg.data.gg.ind}}
+
+This object has the following shape:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{head}\NormalTok{(qg.data.gg.inds)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+##    ninecode natalyr sex.use nestrec surv.ind.to.ad brood.date sex.use.x1
+## 1 111111112    2012       0    3086              0        120          1
+## 2 111111121    2015       0    3237              0        141          1
+## 3 143173366    1993       1    1838              1         96          1
+## 4 143173381    1993       2    1867              1        102          2
+## 5 143173382    1993       1    1867              0        102          1
+## 6 143173384    1993       1    1851              0        102          1
+##       f.coef      foc0        g1 natalyr.no sex
+## 1 0.11155218 0.4085679 0.5914321         38   0
+## 2 0.04814660 0.3299752 0.6700248         41   0
+## 3 0.05108643 0.5283203 0.4716797         19   0
+## 4 0.03125000 0.6250000 0.3750000         19   1
+## 5 0.03417969 0.4335938 0.5664062         19   0
+## 6 0.02148438 0.6328125 0.3671875         19   0
+\end{verbatim}
+
+The response variable we will use is \texttt{surv.ind.to.ad}. Below are
+some elementary properties of the data.
+
+\begin{verbatim}
+## [1] "Earliest year: 1993"
+\end{verbatim}
+
+\begin{verbatim}
+## [1] "Number not survived: 1817" "Number survived: 661"
+\end{verbatim}
+
+\begin{verbatim}
+## [1] "natal year correlation: 1"
+\end{verbatim}
+
+\begin{verbatim}
+## [1] "correlation between sex and sex.x1: 0.842997540673555"
+\end{verbatim}
+
+An overview of the columns:
+
+\begin{itemize}
+\tightlist
+\item
+  \emph{ninecode}: Individual ID
+\item
+  \emph{natalyr}: The year the individual was born, e.g.~2015.
+\item
+  \emph{sex.use}: \textbf{Not in use}
+\item
+  \emph{nestrec}: ID for nest number
+\item
+  \emph{brood.date}: Day of the year when the first offspring in
+  individuals nest hatched
+\item
+  \emph{sex.use.x1}: Sex of individual, 1 or 2
+\item
+  \emph{f.coef}: Inbreeding coefficient
+\item
+  \emph{foc0}: ``How foreign'' individual is, related to \texttt{f.coef}
+\item
+  \emph{g1}: Inverse of \emph{foc0}.
+\item
+  \emph{natalyr.no}: The same as the natal year, starting with 1974 as 0
+  (2015=41).
+\end{itemize}
+
+\hypertarget{vizualization-of-juvenile-survival}{%
+\section*{Vizualization of juvenile
+survival}\label{vizualization-of-juvenile-survival}}
+
+We will have a look at how the response, juvenile survival, relates to
+the other covariates in our data.
+
+First, we look at sex:
+
+\begin{verbatim}
+## Warning: package 'ggplot2' was built under R version 4.2.2
+\end{verbatim}
+
+\includegraphics{EDA_files/figure-latex/unnamed-chunk-7-1.pdf}
+
+It seems like the sex in relation to survival is relatively balanced
+here. We can note that it seems like a larger portion of those surviving
+are females. Next, we examine the breeding coefficient.
+
+\includegraphics{EDA_files/figure-latex/unnamed-chunk-8-1.pdf}
+
+Here we see that survival is a bit more skewed toward lower inbreeding
+coefficients. We may also plot the proportion of individuals who survived
+over each year:
+
+\begin{verbatim}
+## `geom_smooth()` using method = 'loess' and formula = 'y ~ x'
+\end{verbatim}
+
+\includegraphics{EDA_files/figure-latex/unnamed-chunk-9-1.pdf}
+
+There seems to be very little trending over the years, but possibly a
+small negative trend. We also examine if there is some correspondence
+between genetic group coefficient (\texttt{g1}) and juvenile survival.
+
+\includegraphics{EDA_files/figure-latex/unnamed-chunk-10-1.pdf}
+
+This shows a similar result to the inbreeding coefficient, namely a skew
+towards the right (lower values of coefficient) in the group that
+survived. Finally, we plot the survival probability based on brood date:
+
+\begin{verbatim}
+## `geom_smooth()` using method = 'loess' and formula = 'y ~ x'
+\end{verbatim}
+
+\includegraphics{EDA_files/figure-latex/unnamed-chunk-11-1.pdf}
+
+This last plot seems to indicate that survival is relatively stable and
+somewhat decreasing for those hatched relatively late. For the largest
+values of brood date, we get an increasing trend but also much
+uncertainty since not that many were hatched this late.

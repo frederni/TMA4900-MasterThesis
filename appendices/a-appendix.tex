@@ -1,0 +1,69 @@
+% \chapter{Omitted theory}
+% \label{app:theory}
+% \todo{Would like feedback if this is necessary and/or a good way of including extra theory.}
+% \section*{Why  $\bm Q$ is sparse in a GMRF}
+% In a GMRF, we have the graph $\mathcal G = (V, E)$ with vertices $V$ and edges $E$ and the random vector $\bm X=\{x_\nu\}_{\nu \in V}$. Furthermore, $\bm X \sim \mathcal N(\bm 0,\bm Q^{-1})$ and satisfies the Markov property $x_j \perp x_{i} | x_{-ij}$, where $i$ and $j$ are not neighboring vertices in the graph, and the notation $ x_{-ij}$ are all $x_k \in \{x_\nu\}_{\nu \in V \setminus \{i,j\}}$. Thus, by construction, we get that $\bm Q_{ij}=0$, so that $\bm Q$ is sparse. 
+
+% \section*{Genetic groups in animal models}
+% We can partition the additive genetic effect into a term capturing individual variation and another capturing immigrant genes, $a_i = u_i + gq_i$. Here, $u_i$ is the deviation from $i$ to the other native group, $q_i$ is the expected contribution of immigrant genes and $g$ is an immigration coefficient, computed as the difference between the native population and the immigrants' genetic group. Notice that this means that the $u_i$ are relative to the founder population.
+
+% % \section*{Distribution specific variance functions}
+% % For instance, in a binary logit model, $\frac{e^x}{1+e^x}\left(1-\frac{e^x}{1+e^x}\right) = \frac{\partial}{\partial x}g^{-1}(x)$. For the probit case, the distribution-specific variance function is $\Phi(x)(1-\Phi(x))$.
+
+% \section*{Decomposition of relatedness matrix}
+% We also consider the decomposition $\bm A = \bm L \bm D \bm L^\top$, in which $\bm L$ is lower triangular and contains information about what genes the individual derives from its ancestors. The diagonal matrix $\bm D$ contains within-family additive genetic variance. From this decomposition, we can construct $\bm A$ with little time and memory complexity using the algorithm described in \textcite{luo1992computing}. Thus, using the pedigree we can encode relatedness into the linear predictor of the animal model. 
+
+
+\chapter{Additional plots}
+% An initial step is to examine the generated pedigree and in particular the relatedness of the different individuals. \autoref{fig:relatedness offdiagonal} displays the off-diagonal values of the relatedness matrices, where a high concentration around larger values would indicate a large degree of relatedness.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/grid_application_gaussian_vs_binom.pdf}
+    \caption[Posterior heritability for application data in different scales]{Posterior distributions of estimated heritability for the Gaussian and probit model, in the application data. The densities are reported in a grid comparing each different type of scale to each other. That is, for both scales for the Gaussian model, we compare the posterior heritability with the probit model for its three different scales. The resulting 3$\times$2 grid shows how they act comparatively.}
+    \label{fig:application gaussian vs binomial}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/grid_simulation_gaussian_vs_binom.pdf}
+    \caption[Posterior heritability for simulation data in different scales]{Posterior distributions of estimated heritability for the Gaussian and probit model, in the simulation data with $\sigma^2_A=0.5$ and $\sigma^2_E=1$. The densities are reported in a grid comparing each different type of scale to each other. That is, for both scales for the Gaussian model, we compare the posterior heritability with the probit model for its three different scales. The resulting 3$\times$2 grid shows how they act comparatively.}
+    \label{fig:simulatino gaussian vs binomial}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \begin{subfigure}{0.49\textwidth}
+    \caption{$\beta=1$, $\sigma^2_A=10$, $\sigma^2_E=1$, $p=0.5$}
+    \includegraphics[width=\textwidth]{figures/fixedeffects_gaussian_probit_sA10_p_5_beta_1.pdf}
+    \end{subfigure}
+    \begin{subfigure}{0.49\textwidth}
+    \caption{$\beta=5$, $\sigma^2_A=10$, $\sigma^2_E=1$, $p=0.5$}
+    \includegraphics[width=\textwidth]{figures/fixedeffects_gaussian_probit_sA10_p_5_beta_5.pdf}
+    \end{subfigure}
+    \begin{subfigure}{0.49\textwidth}
+    \caption{$\beta=1$, $\sigma^2_A=500$, $\sigma^2_E=1$, $p=0.5$}
+    \includegraphics[width=\textwidth]{figures/fixedeffects_gaussian_probit_sA500_p_5_beta_1.pdf}
+    \end{subfigure}
+    \begin{subfigure}{0.49\textwidth}
+    \caption{$\beta=5$, $\sigma^2_A=500$, $\sigma^2_E=1$, $p=0.5$}
+    \includegraphics[width=\textwidth]{figures/fixedeffects_gaussian_probit_sA500_p_5_beta_5.pdf}
+    \end{subfigure}
+    \begin{subfigure}{0.6\textwidth}
+    \includegraphics[width=\textwidth]{figures/fixedeffects_gaussian_probit_legend.pdf}
+    \end{subfigure}
+    \caption[$h^2$ for fixed effects with varying $\beta$]{Posterior heritability for simulations with fixed effects on observation-scale, varying on $\beta$ between $1$ and $5$ across the columns, and between $\sigma^2_A=10$ and $500$ across the rows.}
+    \label{fig:fixedeffects varying betas}
+\end{figure}
+
+\chapter{Exploratory Data Analysis}
+\label{app:EDA}
+\input{appendices/eda.tex}
+
+\chapter{Patching \texttt{rbv}}
+\label{app:rbv-patch}
+\input{appendices/rbv patch}
+
+\chapter{R script}
+\label{app:Rmd script}
+\input{appendices/rmd-script}                                      

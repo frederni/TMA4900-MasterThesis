@@ -93,6 +93,7 @@ FORMULA.EXTRA.IID.NOISE <- FALSE
 ```
 
 Below we do a couple more preprocessing steps, namely:
+
 * build a pedigree structure from the denormalized table with \texttt{prepPed}.
 * assign new IDs to each individual starting at $1$.
 * keep a mapping record between the original IDs (ninecode) and the new $1$-indexed IDs.
@@ -1344,6 +1345,15 @@ print.heritability.table(3, heritability, FALSE)
 print.heritability.table(3, heritability.sim, TRUE)
 ```
 
+Code for part of discussion:
+```{r}
+write(paste0("$\\hat p=", round(simulation.res2$p,2),
+             "$, that the true heritability of the observation scale",
+             " would be $",
+             round(1/3*1/threshold.scaling.param(simulation.res2$p),3),
+             "$."),
+             file="../figures/trueh2discussion.tex")
+```
 The table gives some indication, but we also want to look qualitatively on the densities. We start by just plotting a grid to compare each Gaussian vs. Probit scale two by two.
 
 ```{r grid plotting}
@@ -1455,6 +1465,7 @@ plot.h2.sim$p
 ```
 
 Key takeaways:
+
 * The Gaussian model to liability scale doesn't fit well with the other latent models.
 * The scalings from binomial latent onto data scale fit well with the Gaussian one
 

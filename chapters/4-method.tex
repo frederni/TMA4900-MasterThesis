@@ -1,0 +1,206 @@
+\chapter{Methods}
+
+\section{Overview}
+In this chapter, we will present the methods and model specifications used to answer the research question. We will also introduce the simulation and application data used in the study. Supplementary to the chapter is the complete R code provided in \autoref{app:Rmd script}.
+
+The initial segment of the thesis will investigate different scales of heritability, with particular attention given to the threshold model. In the threshold model, we assume that the underlying scale is a Gaussian distribution. This distribution is not available in application contexts. However, by using simulations, we can construct this Gaussian linear predictor and produce a corresponding binary response variable using a dichotomization of the linear predictor. Then, by computing the heritability from a Gaussian model fitted with the dichotomized response, we can scale it onto the liability scale with the coefficient $p(1-p)/t^2$ from the threshold model \eqref{eq:heritability for threshold model}, and compare the model's performance to the true underlying distribution. If the results from the Gaussian model coincide well with the true heritability, we would strengthen the claim that Gaussian modeling may be sufficient to accurately estimate heritability.
+
+The second segment of the thesis aims to compare heritability from state-of-the-art back-transformation strategies applied to a probit model, with heritability from our Gaussian mixed model. The main focus will be to compare the posterior heritability density in the Gaussian and probit models, where the probit model attains the same scale as the Gaussian using back-transformations, namely the observation scale. If the Gaussian observation-scale heritability is similar to that of the more complex back-transformation algorithms, one may conclude that linear mixed models can be sufficient when primarily interested in the additive genetic variance (or heritability) on the observation scale. These comparisons will be the most important results when discussing a Gaussian model's performance on binary traits.
+
+\section{Statistical models}
+% Include Gaussian, probit models and all state-of-the-art methods
+We define the general statistical models and heritability scales used throughout the thesis in this section. Methods specific to the simulation or application data are provided in the following sections.
+%Furthermore, having a method for simulating data can provide more generality for the other areas of research in this thesis. % This sentence doesn't belong since this is a general section and not about motivating simulation.
+
+% \subsection{Gaussian and binomial model}
+% We highlight the statistical models used for all datasets in this section, and introduce methods specific to the application and simulation data in the sections.
+In general, the Gaussian model is on the form
+\begin{equation}
+    \bm y = \beta_0 + \sum_{i=1}^n \beta_i \bm x_{i} + \sum_{j=1}^m \gamma_{0,j} \bm z_{j} + \bm a + \bm\varepsilon \ ,
+    \label{eq:method:general gaussian model}
+\end{equation}
+where $\bm y$ is the response, $\beta_0$ is the intercept, $\beta_i \bm x_i$ are the $n$ fixed effects, $\gamma_{0,j}\bm z_j$ are the random effects, $\bm a \sim \mathcal N(\bm 0, \bm A \sigma^2_A)$ are the breeding values for a defined relatedness matrix $\bm A$, and $\bm\varepsilon \sim \mathcal N(\bm 0, \bm I \sigma^2_E)$ is the error term. The corresponding binomial probit model is defined as
+\begin{align}
+    \label{eq:method:general probit model}
+    \bm \eta = \beta_0 + \sum_{i=1}^n \beta_i \bm x_{i} + \sum_{j=1}^m \gamma_{0,j} \bm z_{j} + \bm a \ , \\
+    \E{\bm y | \bm X} = \Phi(\bm \eta) \ ,
+\end{align}
+where $\Phi$ is the cumulative density function of $\mathcal N(0,1)$. Moreover, all random effects are given a penalized complexity prior (PC prior) of the form $\operatorname{PC}(U, \alpha=0.05)$ \autocite{simpson-pcpriors}. Note that PC priors are parameterized so that $U$ denotes the standard deviation and not the variance \autocite{inla2009}. The value of $U$ in the PC priors, as well as the specific fixed and random effects, are denoted in the subsequent sections regarding the application and simulation data, respectively.
+Since we are using a Bayesian statistical framework, we can get a posterior distribution of the random effects estimates and hence a posterior of the estimated heritability. We use the INLA framework \autocite{inla2009} for Bayesian inference and model fitting.
+
+\subsection{Comparing with state-of-the-art techniques}
+\label{sec:method:compute h2}
+Initially, we fit both a Gaussian and a binomial probit model to the datasets. With the fit of the models, we can compute the heritability. For the Gaussian models, this will simply be
+\begin{equation}
+\label{eq:heriability directly computed}
+    h^2_\text{obs} = \frac{\hat \sigma^2_A}{\hat \sigma^2_P}=\frac{\hat{\sigma}^2_A}{\hat\sigma^2_A + \hat\sigma^2_E + \sum_{j} \widehat{\operatorname{Var}[\gamma_{0,j}]}} \ ,
+\end{equation}
+where $\sum_j \widehat{\Var{\gamma_{0,j}}}$ is the sum of variances from all $j$ random effects, excluding the breeding values whose variance is $\hat\sigma^2_A$.
+% \begin{equation}
+%     h^2_{obs} = \begin{cases}
+%         \frac{\hat\sigma^2_A}{\hat\sigma^2_A+\hat\tau_{0,1}+\hat\tau_{0,2}} &\text{for application data} \\
+%         \frac{\hat\sigma^2_A}{\hat{\sigma^2_A}+\widehat{\operatorname{Var}[\varepsilon]}}  &\text{for simulation data}.
+%     \end{cases}
+% \end{equation}
+The observation-scale heritability is thus directly computable from the estimated variance components without transformation. However, computing heritability for a probit model \eqref{eq:method:general probit model} would yield a latent scale estimate of heritability, denoted as $h^2_\text{lat}$. To obtain a comparable estimate to $h^2_\text{obs}$, it is necessary to use some of the techniques described in the theory chapter. 
+Once the estimates are computed for the different scales, we can compare their posterior distributions to infer conclusions about how well the Gaussian model performs. The resulting heritability scales are described in \autoref{tab:h2 notation}. In particular, we want to compare $h^2_\text{obs}$ with $h^2_\Psi$ and $h^2_\text{liab}$ with $h^2_{\Phi}$.
+% \begin{table}[b]
+% \centering
+% \begin{tabular}{@{}lllll@{}}
+% \toprule
+%                 & \multicolumn{2}{c}{Gaussian model} & \multicolumn{2}{c}{Probit model} \\ \midrule
+%                 & Notation          & Expression      & Notation        & Expression     \\
+% Observation scale      & $h^2_{\text{obs}}$ & \eqref{eq:heriability directly computed}  & $h^2_\Psi$ & Alg. \ref{alg:qgglmm-probit}  \\
+% Liability scale & $h^2_\text{liab}$  & \eqref{eq:heritability for threshold model}   & $h^2_\Phi$ & \eqref{eq:link variance h2 phi}  \\
+% Latent scale    &                   &                 & $h^2_\text{lat}$     & \eqref{eq:heriability directly computed}          \\ \bottomrule
+% \end{tabular}
+% \caption[Heritability notation for different scales]{The notation used throughout the other sections for the different scales and models. The subsets "obs" and $\Psi$ and $\Phi$ will be in the observation scale, those with "liab" and $\Phi$ are on a liability scale, and "lat" indicates the latent scale. The estimates on the same scales will be subject to comparison, i.e., $h^2_\text{obs}$ with $h^2_\Psi$ and $h^2_\text{liab}$ with $h^2_\Phi$, respectively. The "Expression" column provides a reference describing how to transform onto the said scale.}
+% \label{tab:heritability notation}
+% \end{table}
+
+\subsubsection{Observation scale heritability from probit model} \label{sec:method:qgglmm settings}
+When estimating the heritability from a probit model on the observation scale, i.e., $h^2_{\Psi}$, we can choose to work with the mode $\operatorname{MAP}[\bm\mu]$ of the intercept estimate $\bm\mu$, or using the latent marginal estimates. By simply using the intercept, we do not average over fixed effects, which could lead to significantly different results \autocite{de2016general}, and is denoted in the results as \textit{No averaging}. In particular, when not averaging over fixed effects, the algorithm simplifies to
+\begin{align}
+    p = 1 - \Phi(0; \operatorname{MAP}[\bm\mu]; \hat\sigma^2_{RE}+1) \ , \\
+    h^2_\Psi = \frac{f_\mathcal{N}(0; \operatorname{MAP}[\bm\mu], \hat\sigma^2_{RE}+1)\; \hat\sigma^2_A}{p(1-p)} \ ,
+\end{align}
+where $p$ is the observation-scale estimated phenotypic mean. Using latent marginal estimates, which is $\bm X\bm\hat{\bm\beta}$ marginal to random effects, we also have two options, denoted by \textit{Frequentist} or \textit{Bayesian}. The frequentist approach is to use $\operatorname{MAP}[\bm X\bm\hat{\bm\beta}]$ for each predictor so that each sample of $h^2_{\Psi}$ achieves the same predicted values. For example, by sampling 1000 times for a dataset with 500 observations, the same 500 predictors would be used for all 1000 samples. The other option is more in line with the Bayesian framework, in which we draw one sample from the posterior of each $\bm X \bm{\hat\beta}$ as many times as the sampling number for $h^2_{\Psi}$, but is also slower. Although this method is slower, it is theoretically more sound, given that we use a sufficiently large sample size. Using samples instead of the mode introduces more information, thus improving the estimate of posterior heritability. Comparing how the posteriors differ with these different approaches is relevant for understanding when they may be approximated with a Gaussian model.
+
+
+\section{Simulation setup}
+We lay out how we produce the simulated pedigree data and binary traits below. In short, we simulate a pedigree and binary response, from which we can fit a Gaussian model and scale the observation-scale estimated heritability back onto the liability scale.
+% If the formula in the threshold model is reliable, we will expect the threshold-scaled estimated heritability to be close to that of the true value.
+
+\subsection{Simulating a pedigree}
+To make a proper model for the animal model, we need to make a simulated relatedness matrix $\bm A$, which requires a pedigree. We can generate a simulated pedigree using the R package \texttt{GeneticsPed} \autocite{geneticsPed}.
+We use the ratio $N_e/N_c$ to determine the number of dams and sires, where $N_e$ is the effective population size and $N_c$ is the census population size. $N_e$ determines the biological rates such as genetic drift, and analyzing the ratio enables us to examine the impact of different traits and factors' influence on the effective population size \autocite{NeNc2002}. For the purposes of this simulation, we fix $N_e/N_c$ to $\frac12$ and generate $100$ individuals with $100\ N_e/N_c$ dams and sires, respectively, for $9$ generations providing $900$ data points. We also fix the additive genetic variance $\sigma_A^2$ for each simulation run. This is sufficient for generating a simulated pedigree and hence a relatedness matrix. Using the relatedness matrix, we may generate random deviates of breeding values $a_i$ of $\bm a=[a_1, \dots, a_n]^\top$ with $\bm a \sim \mathcal N(\bm 0, \bm A \sigma^2_A)$. With our setup, we require a technical modification of the methods \texttt{rbv()} from the R package \texttt{MCMCglmm} \autocite{mcmcglmm}, see \autoref{app:rbv-patch} for more details. The resulting pedigree also provides the generation number and sex for each individual, the latter of which can be used for the simulation of fixed-effects models.
+
+With the defined pedigree and breeding values, we let $\Tilde{\bm \eta}$ be the linear predictor, for instance
+\begin{equation}
+    \Tilde{\bm\eta} = \bm a + \bm\varepsilon \ ,
+    \label{eq:simulation linear predictor}
+\end{equation}
+where $\bm\varepsilon \sim \mathcal N(\bm 0,\bm I \sigma^2_E)$. In most cases, $\sigma^2_A$ defaults to the arbitrarily chosen value $0.5$ and $\sigma^2_E$ to $1$, unless otherwise stated. The linear predictor is the true, underlying normal distribution for the simulation.
+
+\subsubsection{Simulating a binary response}
+
+We can use the dichotomization of $\Tilde{\bm\eta}$ to define the simulated response variable as
+\begin{equation}
+y_i = \begin{cases}
+0, \quad \eta_i\le c,\\
+1, \quad \eta_i > c \ ,
+\end{cases}
+\label{eq:dichotomize round}
+\end{equation}
+for a cutoff value $c$ for each $\eta_i \in \Tilde{\bm \eta}$, hereby denoted as thresholding dichotomization. When $\Tilde{\bm \eta}$ is centered around zero, this dichotomization leads to a balanced phenotypic response ($p\approx 0.5$) with $c=0$. Alternatively, we can generate the responses $y_i$ as binomial realizations. Here, the probability of success $p_i$ is based on $\Tilde{\bm \eta}$ scaled between 0 to 1, that is,
+\begin{equation}
+     y_i \sim \operatorname{Bern}(p_i=\Phi(\eta_i)) \ .
+     \label{eq:dichotomize binom}
+\end{equation}
+We also define $\hat p$ as the estimator to the marginal phenotypic mean, i.e., 
+\begin{equation}
+    \hat p = \frac{\sum_{i=1}^N\mathbbm{1}[y_i=1]}{N} \ .
+\end{equation}
+This is the same as $p$ used for the threshold model \eqref{eq:heritability for threshold model}, and we use the estimator for such computations.
+
+\subsubsection{Fitting the model}
+When fitting the model, we primarily include no fixed effects or any random effects other than the breeding value, and an iid random effect in the probit models. That is, $\bm y = \bm \beta_0 + \bm a + \bm\varepsilon$ in the Gaussian case and $\bm\eta = \beta_0+\bm a + \bm \gamma_0$ and $\bm\gamma_0\sim\mathcal N(\bm 0, \bm I)$. When it comes to the prior choice, we will use penalized complexity priors PC$(U, 0.05)$, where $U$ is rounded up to the closest order of magnitude when $\sigma^2_A \ge 1$. For example, if $\sigma_A$ is $3\cdot 10^2$, $U$ becomes $10^3$, meaning that we assume $\operatorname{Pr}(\sigma_A \le 10^3) = 0.95$. For $\sigma^2_A < 1$, the prior defaults to PC$(1,0.05)$. 
+
+
+\subsection{Robustness tests}
+\label{sec:method:robustness}
+To properly evaluate the robustness of our techniques, we will look into alternative models using fixed effects and overdispersion, respectively. For the case of fixed effects, we generate simulation data using the linear predictor
+\begin{equation}
+\Tilde{\bm \eta} = \bm a + \beta_\text{sex} \bm x_{\text{sex}} + \bm \varepsilon \ ,
+\end{equation}
+where $\bm a$ and $\bm \varepsilon$ are as in \eqref{eq:simulation linear predictor}, $\bm x_{\text{sex}}$ are realizations of the individual's sex from the generated pedigree, and for a specified choice of $\beta_\text{sex}$. For a sufficiently large weighting of $\beta_\text{sex}$ compared to $\sigma^2_A$ and $\sigma^2_E$ and a fixed variance of $\bm x_\text{sex}$, we expect the variance in the fixed effect to dominate the linear predictor. Hence, we must include the fixed effect variances for heritability estimation for such models by adding the term $\beta_\text{sex}^2 \sigma^2_{\text{sex}}$, where $\sigma^2_{\text{sex}}$ is the unbiased sample variance of the observations for the \textit{sex} covariate, to the total phenotypic variance \autocite{nakagawa2013general}. The underlying heritability in the simulation becomes
+\begin{equation}
+    h^2_\text{liab} = \frac{\sigma^2_A}{\sigma^2_A+1+\bm\beta^2_\text{sex}\sigma^2_{\text{sex}}} \ .
+\end{equation}
+
+Another consequence of including a fixed effect is that $\eta$ will no longer necessarily be centered around zero. Thus, we define the cutoff point in the threshold-based dichotomization based on the quantiles of the simulated $\Tilde{\bm\eta}$. In particular, we will investigate the performance of the Gaussian model with a balanced $p\approx 0.5$ and an unbalanced phenotypic mean $p\approx 0.1$. In the runs where $p$ is imposed balanced, the cutoff is set to $\E{\Tilde{\bm\eta}}$, and in the unbalanced case, the cutoff is at the $(1-p)$th quantile. For simplicity, all runs use thresholding dichotomization.
+We test the models with the presence of fixed effects with $\beta_\text{sex} = 10$ and $\beta_\text{sex}=100$. The variance explained by the fixed effect is $\beta_\text{sex}^2\sigma^2_\text{sex}=\beta_\text{sex}^2 p(1-p)$, for example $25$ for a balanced phenotypic mean ($p \approx 0.5)$ and $\beta_\text{sex}=10$.
+For the case of overdispersion, we can change $\bm\varepsilon$ in the linear predictor for the simulation, so that $\bm\varepsilon \sim \mathcal{N}(\bm 0, \bm I \sigma^2_E)$ with a chosen $\sigma^2_E > 1$. In addition, we fit two probit models, one without the random iid effect $\bm\gamma_0$, and one model with the effect.
+
+\section{Data description}
+For the purposes of this thesis, the application dataset consists of observations of song sparrows from Mandarte Island. Researchers have collected data from this population since 1975, but we mainly use data from 1993-2018, as the individuals in these years have a complete pedigree \autocite{reid2021}. Song sparrows are socially monogamous and open nesting, but are known to aggressively defend territory against intrusion from neighboring males \autocite{reid2021, OLoghlen1999}.
+
+The dataset contains parental linkage information for the individuals. In the pruned dataset, that is, observations between 1994 and 2018, we have 2722 individuals with a complete pedigree. In addition to parental knowledge, the data includes the natal year, brood date, sex, coefficients of inbreeding, and proportion of genetic origin from immigrants. Finally, we have the binary trait of interest, namely, juvenile survival to adulthood, surveyed in April each year to determine if they had survived their first winter. We provide a brief exploratory data analysis in \autoref{app:EDA}.
+
+For the song sparrow data, we use the same fixed and random effects as in \textcite{reid2021}, and prior distributions as \textcite{rekkebo2021}, namely
+\begin{align}
+\label{eq:method:inla model}
+\bm\eta = \beta_0 + \sum_{i=1}^5 \beta_i \bm x_{i} + \sum_{j=1}^2 \gamma_{0,j} \bm z_{j} + \bm a \ , \\
+\gamma_{0,1} \sim \mathcal N(0,\sigma^2_{0,1}) \ , \quad \gamma_{0,2} \sim \mathcal N(0, \sigma^2_{0,2}) \ , \quad \bm a \sim \mathcal N(\bm 0, \bm A \sigma_A^2) \ , \nonumber \\
+\operatorname{E}[y_i |\bm X] = \Phi(\eta_i) \ , \nonumber \\
+\sigma^2_{0,1}, \sigma^2_{0,2}, \sigma_A^2 \sim \operatorname{PC}(1,0.05) \ , \nonumber
+\end{align}
+where the five fixed effects include the inbreeding coefficient, immigration coefficient, natal year, brood date (in days), and sex. The three random effects ($z_1$, $z_2$, and $\bm a$) are the nest grouping factor, the natal year grouping factor, and the individual IDs where we encode the pedigree in the relatedness matrix $\bm A$. The prior sensitivity has been shown to be low in this dataset \autocite{rekkebo2021}, so we can safely impose $\operatorname{PC}(1,0.05)$ on all variance components.
+
+\subsection{Preprocessing the song sparrow data}
+The preprocessing step is especially important when working with real data. We start by scaling all continuous variances. Using the scaled data, we continue by constructing the relatedness matrix $\bm A$ using the \texttt{nadiv} package \autocite{wolak2012-nadiv}, see \autoref{app:Rmd script} for more details.
+% Specifically, the generation follows the following steps:
+% \begin{enumerate}
+%     \item build a pedigree structure from the denormalized table with \texttt{prepPed}.
+%     \item assign new IDs to each individual starting at $1$.
+%     \item keep a mapping record between the original IDs (ninecode) and the new $1$-indexed IDs.
+%     \item use this mapping to transform the IDs for each individual's Dam and Sire to the same.
+%     \item compute the inverse of the relatedness matrix.
+% \end{enumerate}
+Once $\bm A$ and $\bm A^{-1}$ are computed, we may fit Gaussian and binomial models to the dataset, and compute heritability on the different scales as previously described. Note that we require the inverse of $\bm A$ since the INLA framework operates with precision matrices. 
+
+\subsection{Residual analysis}
+Lastly, we present the methods used in residual analyzes carried out on the application data. For the purposes of this thesis, we employ a cross-validated probability integral transform test (PIT test). When computing PIT values, we use a subset of the data to fit the model and evaluate the cumulative density function (CDF) of the predictions at a set of realized data that is not part of the training set used in the model. The CDF distribution should resemble the uniform distribution between 0 and 1, given that the normality assumptions in our model are correct \autocite{brinla2018, pitvalues}.
+
+\section{Overview of methodology}
+
+This section primarily summarizes the different scales of heritability used in the thesis. Second, we summarize the methodology and thus what figures will be reported in the following chapter.
+
+\subsection{Overview of heritability scales}
+A complete overview of the heritability scales and their expressions are provided in \autoref{tab:h2 notation}. The first heritability scale is denoted $h^2_\text{obs}$, observation-level heritability, and is the heritability in a Gaussian model, computed directly as the proportion of phenotypic variance explained by additive genetic variance. Without the presence of fixed effects,
+\begin{equation*}
+    h^2_\text{obs} = \frac{\sigma^2_A}{\sigma^2_P} \ ,
+\end{equation*}
+and with a fixed effect such as \textit{sex}, $\sigma^2_P$ would also include the variance from the fixed effect, $\beta_\text{sex}^2\sigma^2_\text{sex}$. The other observation-level scale is denoted by $h^2_\Psi$, which is the result of passing a binomial probit model through the back-transformation algorithm. The computing scheme for $h^2_\Psi$ is provided in \autoref{alg:qgglmm-probit} for a binomial model with a probit link. Note that for this scale, we can pass the marginal fitted values for the model with different sampling techniques, providing us with three ways of computing $h^2_\Psi$, previously denoted as \textit{Bayesian}, \textit{Frequentist} and \textit{No averaging}.
+
+By directly computing heritability for a probit model, we obtain the latent scale with the notation $h^2_\text{lat}$. The latent scale is not comparable to any heritability from the Gaussian models, and consequentially will not be reported in the results or in the table overview. However, by including link variance to the denominator of the heritability expression, we get the heritability estimate of a probit model on the liability scale, 
+\begin{equation*}
+    h^2_\Phi = \frac{\sigma^2_A}{\sum_i(\sigma^2_i) + 1} \ ,
+\end{equation*}
+where $\sum_i \sigma^2_i$ resembles the sum of all variance components from the random effects in the model. Note that the liability and observation scales are not comparable. However, recalling the threshold model \eqref{eq:heritability for threshold model}, we may multiply $h^2_\text{obs}$ (from a Gaussian model) by $p(1-p)/t^2$ to obtain $h^2_\text{liab}$. Thus, we have the scales $h^2_\text{obs}$ and $h^2_\text{liab}$ for the Gaussian models, as well as $h^2_\Phi$ and $h^2_\Psi$ for the binomial models.
+
+% \begin{table}[htb]
+% \begin{tabularx}{\textwidth}{@{}lXlXX@{}}
+% \toprule
+% Notation        & Scale & Model & Expression & Description \\ \midrule
+% $h^2_\text{obs}$ & Observation $y_i$ & Gaussian & $\sigma^2_{A,\text{obs}}/\sigma^2_{P,\text{obs}}$ &
+%     For threshold models, $h^2_\text{obs}=t^2/[p(1-p)]\cdot h^2_\text{liab}$ \\ 
+% $h^2_\text{liab}$ & Liability $\Tilde{\eta_i}$ & Gaussian & $p(1-p)/t^2\cdot h^2_\text{obs}$ &
+%     If estimators are on liability scale, $h^2_\text{liab}=\sigma^2_A/\sigma^2_P$ \\ 
+    
+% $h^2_\text{lat}$ &  Latent $\eta_i$ & Probit & $\sigma^2_{A,\text{lat}}/\sigma^2_{P,\text{lat}}$ &
+%     Estimators are on latent scale \\ 
+
+% $h^2_\Phi$ & Liability $\eta_i$ and $\Tilde{\eta_i}$ & Probit & $\sigma^2_{A,\text{lat}}/(\sigma^2_{P,\text{lat}}+1)$ &
+%     Estimators are on latent scale, and assuming probit link \\
+
+% $h^2_\Psi$ & Observation $y_i$ & Probit & \autoref{alg:qgglmm} using $\sigma^2_{*,\text{lat}}$ &
+%     Estimators originally on latent scale \\ \bottomrule
+% \end{tabularx}
+% \caption{An overview of the different heritability scaled used in this thesis.}
+% \label{tab:h2 notation}
+% \end{table}
+
+
+\subsection{Experimental overview}
+For the simulation study, we first fit a Gaussian model for varying $\sigma^2_A$ between $10^{-3}$ and $10^4$ and compute its heritability at the observation level ($h^2_\text{obs}$). This heritability is scaled back to the liability scale and compared to the theoretical liability scale heritability, $\sigma^2_A/\sigma^2_P$. We compare the rescaling using the response with both threshold and binomial dichotomization.
+Second, for $\sigma^2_A=0.5$ and $\sigma^2_E=1$, we fit a Gaussian and probit model and compute all scales of heritability. We report the mean, mode, and standard deviation, and show density on observation scales and liability scales. To effectively estimate the mode of the heritability, we use kernel density estimation with 512 equidistant points \autocite{r-core-team}. The deviance information criteria (DIC) are provided alongside these results.
+
+Third, we run a probit model with $\sigma^2_A=\{0.1, 1\}$ and $\sigma^2_E=1$ to compare the heritability densities from the probit model back-transformation algorithm with the three different sampling techniques of marginal fitted values.
+Subsequently, we run a simulation that includes fixed effects in the linear predictor, for varying values of $\sigma^2_A$, also between $10^{-3}$ and $10^4$, and using rounded dichotomization. The weight $\beta_\text{sex}$ for the fixed effect is chosen to be $10$ and $100$, and the phenotypic mean $\hat p$ is chosen to be unbalanced $\hat p=0.1$, and then balanced $\hat p\approx 0.5$. Furthermore, for $\sigma^2_A=10$, $\beta_\text{sex}=10$, $\sigma^2_E=1$, and $\hat p=0.1$, we report the heritability density on observation scale.
+
+Finally, we fit models without fixed effects, but with overdispersion, i.e., $\sigma^2_E>1$. For $\sigma^2_A=0.5$ and $\sigma^2_E=\{2, 5, 10\}$, we report the density of the heritability from a probit model with an extra iid effect. We provide one last simulation run for $\sigma^2_A=10$ and $\sigma^2_E=10$. For the sake of comparison, we also report a regular probit model and a Gaussian model without fixed effects and without any extra iid random effect, and report the obtained heritability densities on the observation scale alongside the probit model with an iid random effect.
+
+For the application study, we first fit a Gaussian and probit model and compute all heritabilities on the different scales, also reporting mean, (estimated) mode, standard deviation, and plots of the heritability densities on observation and liability scales, as well as the DIC. Continuing by replicating the methodology from the simulation case, we compare the densities of the heritability obtained from the three different sampling techniques of marginal fitted values for the probit back-transformation algorithm. We also report the residual distribution and distribution of the Gaussian model's PIT values to determine model violations. The last robustness test is to report and compare histograms of off-diagonal values of the generated relatedness matrix from a real dataset, with the relatedness matrix from a simulated pedigree to determine validity of the simulation data.
+
+\include{figures/h2notation}

@@ -1,0 +1,116 @@
+\hypertarget{how-the-bug-arises}{%
+\section*{How the bug arises}\label{how-the-bug-arises}}
+
+The function \texttt{rbv} generates random breeding values based on a
+pedigree. The pedigree must either be a data frame with columns
+\emph{id, dam, sire}, or a \texttt{phylo} object. The issue arises when
+using GeneticsPed to generate the pedigree since this returns a
+multi-class object rather than just one single object.
+
+\hypertarget{minimal-viable-product-to-reproduce-issue}{%
+\section*{Minimal viable product to reproduce
+issue}\label{minimal-viable-product-to-reproduce-issue}}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{library}\NormalTok{(GeneticsPed)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+## Warning: package 'GeneticsPed' was built under R version 4.2.2
+\end{verbatim}
+
+\begin{verbatim}
+## Loading required package: MASS
+\end{verbatim}
+
+\begin{verbatim}
+## 
+## Attaching package: 'GeneticsPed'
+\end{verbatim}
+
+\begin{verbatim}
+## The following object is masked from 'package:stats':
+## 
+##     family
+\end{verbatim}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{library}\NormalTok{(MCMCglmm)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+## Loading required package: Matrix
+\end{verbatim}
+
+\begin{verbatim}
+## Warning: package 'Matrix' was built under R version 4.2.2
+\end{verbatim}
+
+\begin{verbatim}
+## Loading required package: coda
+\end{verbatim}
+
+\begin{verbatim}
+## Warning: package 'coda' was built under R version 4.2.2
+\end{verbatim}
+
+\begin{verbatim}
+## Loading required package: ape
+\end{verbatim}
+
+\begin{verbatim}
+## Warning: package 'ape' was built under R version 4.2.2
+\end{verbatim}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{ped0 }\OtherTok{\textless{}{-}} \FunctionTok{generatePedigree}\NormalTok{(}\AttributeTok{nId =} \DecValTok{100}\NormalTok{, }\AttributeTok{nGeneration =} \DecValTok{9}\NormalTok{, }
+                         \AttributeTok{nFather =} \DecValTok{50}\NormalTok{, }\AttributeTok{nMother =} \DecValTok{50}\NormalTok{)}
+\NormalTok{pedigree }\OtherTok{\textless{}{-}}\NormalTok{ ped0[ , }\FunctionTok{c}\NormalTok{(}\DecValTok{1}\NormalTok{,}\DecValTok{3}\NormalTok{,}\DecValTok{2}\NormalTok{)]}
+\FunctionTok{names}\NormalTok{(pedigree) }\OtherTok{\textless{}{-}} \FunctionTok{c}\NormalTok{(}\StringTok{"id"}\NormalTok{, }\StringTok{"dam"}\NormalTok{, }\StringTok{"sire"}\NormalTok{)}
+\FunctionTok{attr}\NormalTok{(pedigree, }\StringTok{"class"}\NormalTok{) }\CommentTok{\# Contains 2 classes}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+## [1] "Pedigree"   "data.frame"
+\end{verbatim}
+
+Trying to use rbv will end in an error
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{u }\OtherTok{\textless{}{-}} \FunctionTok{rbv}\NormalTok{(pedigree, }\FloatTok{0.4}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+The error code is
+
+\begin{verbatim}
+Error in if (attr(pedigree, "class") == "phylo") { : 
+  the condition has length > 1
+\end{verbatim}
+
+\hypertarget{patching-the-issue}{%
+\section*{Patching the issue}\label{patching-the-issue}}
+
+The only line required to change is in \texttt{rbv.R}, and is the fifth
+line. Simply change it from
+
+\begin{verbatim}
+if(attr(pedigree, "class")=="phylo"){ped=FALSE}
+\end{verbatim}
+
+and change it to:
+
+\begin{verbatim}
+if(any(attr(pedigree, "class")=="phylo)){ped=FALSE}
+\end{verbatim}
+
+Then, rebuild the modified package. A patched tarball file is available
+on Github
+\href{https://github.com/frederni/TMA4900-MasterThesis/blob/main/MCMCglmm-rbv-patch.tar.gz}{here}.
