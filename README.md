@@ -1,5 +1,5 @@
 # TMA4900-MasterThesis
-A collection of code used in master thesis at NTNU
+A collection of code used in master thesis at NTNU, also including the TeX files for the thesis.
 
 # Requirements
 
